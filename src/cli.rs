@@ -17,6 +17,24 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Create a new snippet
+    New {
+        /// The command to save; if omitted, you'll be prompted for it
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+
+        /// Display tag prompt (delimiter: space)
+        #[arg(short = 't', long = "tag")]
+        tag: bool,
+
+        /// Can enter multiline snippet (blank line twice to quit)
+        #[arg(short = 'm', long = "multiline")]
+        multiline: bool,
+
+        /// Use editor to create snippet
+        #[arg(short = 'e', long = "editor")]
+        editor: bool,
+    },
     /// Show all snippets
     List {
         /// Display snippets in one line
@@ -27,6 +45,8 @@ pub enum Commands {
         #[arg(short = 't', long = "tags")]
         tags: Option<String>,
     },
+    /// Edit config file
+    Configure,
     /// Print the version number
     Version,
 }
