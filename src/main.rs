@@ -46,6 +46,9 @@ fn run() -> Result<()> {
         Commands::Configure => {
             cmd::configure::run(&cfg, &config_path)?;
         }
+        Commands::Edit { query, tag } => {
+            cmd::edit::run(&cfg, cmd::edit::EditOptions { query, tag })?;
+        }
         Commands::Search {
             raw,
             query,
@@ -59,6 +62,27 @@ fn run() -> Result<()> {
                     tag,
                     delimiter,
                     raw,
+                },
+            )?;
+        }
+        Commands::Exec { query, tag, silent } => {
+            cmd::exec::run(&cfg, cmd::exec::ExecOptions { query, tag, silent })?;
+        }
+        Commands::Clip {
+            raw,
+            query,
+            tag,
+            delimiter,
+            show_command,
+        } => {
+            cmd::clip::run(
+                &cfg,
+                cmd::clip::ClipOptions {
+                    query,
+                    tag,
+                    delimiter,
+                    raw,
+                    show_command,
                 },
             )?;
         }
