@@ -46,6 +46,22 @@ fn run() -> Result<()> {
         Commands::Configure => {
             cmd::configure::run(&cfg, &config_path)?;
         }
+        Commands::Search {
+            raw,
+            query,
+            tag,
+            delimiter,
+        } => {
+            cmd::search::run(
+                &cfg,
+                cmd::search::SearchOptions {
+                    query,
+                    tag,
+                    delimiter,
+                    raw,
+                },
+            )?;
+        }
         Commands::Version => {
             cmd::version::run();
         }

@@ -47,6 +47,24 @@ pub enum Commands {
     },
     /// Edit config file
     Configure,
+    /// Search snippets interactively (default filtering tool: fzf)
+    Search {
+        /// Output raw command without entering parameter dialog
+        #[arg(long)]
+        raw: bool,
+
+        /// Initial value for query
+        #[arg(short = 'q', long = "query")]
+        query: Option<String>,
+
+        /// Filter tag
+        #[arg(short = 't', long = "tag")]
+        tag: Option<String>,
+
+        /// Use delim as the command delimiter character
+        #[arg(short = 'd', long = "delimiter", default_value = "; ")]
+        delimiter: String,
+    },
     /// Print the version number
     Version,
 }
