@@ -146,6 +146,18 @@ impl Snippets {
             .cloned()
             .collect()
     }
+
+    /// Keep only snippets whose tags contain exactly `tag`. Mirrors the single-tag
+    /// filter inlined in Go pet's `cmd/util.go` `filter()`, used by
+    /// `search`/`exec`/`clip`/`edit` — distinct from `filter_by_tags`, which is
+    /// `list`'s comma-separated multi-tag filter.
+    pub fn filter_by_single_tag(&self, tag: &str) -> Vec<SnippetInfo> {
+        self.snippets
+            .iter()
+            .filter(|s| s.tag.iter().any(|t| t == tag))
+            .cloned()
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -193,5 +205,21 @@ mod tests {
     fn filter_by_tags_on_empty_snippets_returns_empty() {
         let snippets = Snippets::default();
         assert!(snippets.filter_by_tags(&["x".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn filter_by_single_tag_requires_exact_match() {
+        let mut a = snippet("a");
+        a.tag = vec!["net".to_string()];
+        let mut b = snippet("b");
+        b.tag = vec!["network".to_string()];
+        let c = snippet("c");
+        let snippets = Snippets {
+            snippets: vec![a, b, c],
+        };
+
+        let result = snippets.filter_by_single_tag("net");
+        let descs: Vec<_> = result.iter().map(|s| s.description.as_str()).collect();
+        assert_eq!(descs, vec!["a"]);
     }
 }

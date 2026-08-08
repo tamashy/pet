@@ -5,5 +5,6 @@ pub mod editor;
 pub mod error;
 pub mod format;
 pub mod path;
+pub mod selector;
 pub mod shell;
 pub mod snippet;
