@@ -3,10 +3,7 @@
 /// Multiline commands are flattened to a literal `\n` so each snippet stays one line.
 pub fn render_template(format: &str, description: &str, command: &str, tags: &[String]) -> String {
     let flattened_command = command.replace('\n', "\\n");
-    let tags_str = tags
-        .iter()
-        .map(|t| format!("#{t} "))
-        .collect::<String>();
+    let tags_str = tags.iter().map(|t| format!("#{t} ")).collect::<String>();
 
     format
         .replacen("$description", description, 1)

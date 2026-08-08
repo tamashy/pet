@@ -5,12 +5,7 @@ use crate::config::Config;
 use crate::format::truncate_pad;
 use crate::snippet::Snippets;
 
-pub fn run(
-    config: &Config,
-    oneline: bool,
-    tags: Option<&str>,
-    debug: bool,
-) -> Result<()> {
+pub fn run(config: &Config, oneline: bool, tags: Option<&str>, debug: bool) -> Result<()> {
     let mut snippets = Snippets::load(&config.general, true)?;
 
     if let Some(tags) = tags {
@@ -28,7 +23,11 @@ pub fn run(
         if oneline {
             let description = truncate_pad(&s.description, col);
             let command = s.command.replace('\n', "\\n");
-            println!("{} : {}", description.bright_green(), command.bright_yellow());
+            println!(
+                "{} : {}",
+                description.bright_green(),
+                command.bright_yellow()
+            );
             continue;
         }
 

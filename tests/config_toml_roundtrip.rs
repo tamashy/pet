@@ -43,10 +43,16 @@ const FULL_FIXTURE: &str = r#"
 fn full_config_round_trips_through_toml() {
     let cfg: Config = toml::from_str(FULL_FIXTURE).expect("parse full fixture");
 
-    assert_eq!(cfg.general.snippetfile, "/home/user/.config/pet/snippet.toml");
+    assert_eq!(
+        cfg.general.snippetfile,
+        "/home/user/.config/pet/snippet.toml"
+    );
     assert_eq!(
         cfg.general.snippetdirs,
-        vec!["/home/user/snippets".to_string(), "/more/snippets".to_string()]
+        vec![
+            "/home/user/snippets".to_string(),
+            "/more/snippets".to_string()
+        ]
     );
     assert_eq!(cfg.general.column, 60);
     assert_eq!(cfg.general.selectcmd, "peco");

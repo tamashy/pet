@@ -48,8 +48,7 @@ fn new_with_positional_command_prompts_only_for_description() {
         .assert()
         .success();
 
-    let snippet_toml =
-        std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
+    let snippet_toml = std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
     assert!(snippet_toml.contains("echo hello world"));
     assert!(snippet_toml.contains("My greeting"));
 }
@@ -67,8 +66,7 @@ fn new_interactive_with_tag_prompt_splits_tags_on_whitespace() {
         .assert()
         .success();
 
-    let snippet_toml =
-        std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
+    let snippet_toml = std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
     assert!(snippet_toml.contains("echo second"));
     assert!(snippet_toml.contains("\"demo\""));
     assert!(snippet_toml.contains("\"test\""));
@@ -110,8 +108,7 @@ fn new_multiline_collects_lines_until_double_blank() {
         .assert()
         .success();
 
-    let snippet_toml =
-        std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
+    let snippet_toml = std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
     assert!(snippet_toml.contains("echo one\necho two"));
 }
 
@@ -132,8 +129,7 @@ fn new_editor_mode_appends_empty_snippet_and_opens_editor() {
         .success()
         .stdout(predicate::str::contains("FAKE_EDITOR_CALLED"));
 
-    let snippet_toml =
-        std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
+    let snippet_toml = std::fs::read_to_string(config_dir.path().join("snippet.toml")).unwrap();
     assert!(snippet_toml.contains("description = \"\""));
     assert!(snippet_toml.contains("command = \"\""));
 }

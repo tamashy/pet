@@ -43,7 +43,10 @@ fn missing_snippet_file_errors() {
     let dir = tempfile::tempdir().unwrap();
     let general = general_for(&dir.path().join("does-not-exist.toml"), vec![]);
     let err = Snippets::load(&general, false).unwrap_err();
-    assert!(matches!(err, pet::error::SnippetError::SnippetFileNotFound(_)));
+    assert!(matches!(
+        err,
+        pet::error::SnippetError::SnippetFileNotFound(_)
+    ));
 }
 
 #[test]
@@ -57,7 +60,10 @@ fn missing_snippet_dir_errors() {
         vec![dir.path().join("nope").to_string_lossy().into_owned()],
     );
     let err = Snippets::load(&general, true).unwrap_err();
-    assert!(matches!(err, pet::error::SnippetError::SnippetDirNotFound(_)));
+    assert!(matches!(
+        err,
+        pet::error::SnippetError::SnippetDirNotFound(_)
+    ));
 }
 
 #[test]
@@ -133,7 +139,10 @@ fn order_sorts_by_each_sortby_value() {
     let original_order = descs(&snippets);
     let mut reversed = snippets.clone();
     reversed.order("-recency");
-    assert_eq!(descs(&reversed), original_order.into_iter().rev().collect::<Vec<_>>());
+    assert_eq!(
+        descs(&reversed),
+        original_order.into_iter().rev().collect::<Vec<_>>()
+    );
 
     let mut untouched = snippets.clone();
     untouched.order("");

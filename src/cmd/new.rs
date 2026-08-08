@@ -59,7 +59,11 @@ pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
         vec![]
     };
 
-    if snippets.snippets.iter().any(|s| s.description == description) {
+    if snippets
+        .snippets
+        .iter()
+        .any(|s| s.description == description)
+    {
         bail!("snippet [{description}] already exists");
     }
 

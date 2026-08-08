@@ -62,10 +62,7 @@ fn list_tags_filters_snippets_without_matching_tag() {
         .args(["list", "-t", "keep"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("tagged")
-                .and(predicate::str::contains("untagged").not()),
-        );
+        .stdout(predicate::str::contains("tagged").and(predicate::str::contains("untagged").not()));
 }
 
 #[test]

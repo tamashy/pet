@@ -49,7 +49,10 @@ fn parses_legacy_pascal_case_config() {
     let cfg: Config = toml::from_str(LEGACY_CONFIG).expect("parse legacy config");
 
     assert_eq!(cfg.general.editor, "vim");
-    assert_eq!(cfg.general.snippetfile, "/home/user/.config/pet/snippet.toml");
+    assert_eq!(
+        cfg.general.snippetfile,
+        "/home/user/.config/pet/snippet.toml"
+    );
     assert_eq!(cfg.general.backend, "gist");
     assert_eq!(cfg.general.column, 40);
     assert_eq!(cfg.gitlab.url, "");
