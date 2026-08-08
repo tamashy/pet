@@ -1,4 +1,7 @@
+pub mod clip;
 pub mod configure;
+pub mod edit;
+pub mod exec;
 pub mod list;
 pub mod new;
 pub mod search;

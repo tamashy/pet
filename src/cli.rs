@@ -47,6 +47,16 @@ pub enum Commands {
     },
     /// Edit config file
     Configure,
+    /// Edit snippet file (default: opened by vim)
+    Edit {
+        /// Initial value for query
+        #[arg(short = 'q', long = "query")]
+        query: Option<String>,
+
+        /// Filter tag
+        #[arg(short = 't', long = "tag")]
+        tag: Option<String>,
+    },
     /// Search snippets interactively (default filtering tool: fzf)
     Search {
         /// Output raw command without entering parameter dialog
@@ -64,6 +74,42 @@ pub enum Commands {
         /// Use delim as the command delimiter character
         #[arg(short = 'd', long = "delimiter", default_value = "; ")]
         delimiter: String,
+    },
+    /// Run the selected commands directly
+    Exec {
+        /// Initial value for query
+        #[arg(short = 'q', long = "query")]
+        query: Option<String>,
+
+        /// Filter tag
+        #[arg(short = 't', long = "tag")]
+        tag: Option<String>,
+
+        /// Suppress the command output
+        #[arg(short = 's', long = "silent")]
+        silent: bool,
+    },
+    /// Copy the selected commands to clipboard
+    Clip {
+        /// Output raw command without entering parameter dialog
+        #[arg(long)]
+        raw: bool,
+
+        /// Initial value for query
+        #[arg(short = 'q', long = "query")]
+        query: Option<String>,
+
+        /// Filter tag
+        #[arg(short = 't', long = "tag")]
+        tag: Option<String>,
+
+        /// Use delim as the command delimiter character
+        #[arg(short = 'd', long = "delimiter", default_value = "; ")]
+        delimiter: String,
+
+        /// Print the command before copying it to the clipboard
+        #[arg(long = "command")]
+        show_command: bool,
     },
     /// Print the version number
     Version,

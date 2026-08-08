@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
@@ -37,6 +38,35 @@ pub fn select_commands(
         .into_iter()
         .filter_map(|line| lookup.get(&line).cloned())
         .collect())
+}
+
+/// Pick which snippet *file* to edit when `snippetdirs` is configured, using Go
+/// pet's `selectFile` display format — `[description]: command #tag1 #tag2` — which
+/// is hardcoded and distinct from the general `format` config template used by
+/// `select_commands`. Returns `None` if nothing was selected.
+pub fn select_file(
+    general: &GeneralConfig,
+    snippets: &[SnippetInfo],
+    opts: &SelectOptions,
+) -> Result<Option<PathBuf>> {
+    let mut lookup: HashMap<String, PathBuf> = HashMap::new();
+    let mut items = Vec::with_capacity(snippets.len());
+
+    for s in snippets {
+        let command = s.command.replace('\n', "\\n");
+        let mut text = format!("[{}]: {command}", s.description);
+        for tag in &s.tag {
+            text.push_str(&format!(" #{tag}"));
+        }
+        items.push(text.clone());
+        lookup.insert(text, s.filename.clone());
+    }
+
+    let selected_lines = run_selectcmd(general, &items, opts)?;
+    Ok(selected_lines
+        .into_iter()
+        .next()
+        .and_then(|line| lookup.get(&line).cloned()))
 }
 
 /// Pipe `items` (one per line) into the configured `selectcmd`, spawned through
@@ -151,5 +181,41 @@ mod tests {
         };
         let result = select_commands(&general, &[], &SelectOptions::default()).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn select_file_uses_hardcoded_display_format_and_returns_origin_path() {
+        let general = GeneralConfig {
+            selectcmd: "cat".to_string(),
+            ..GeneralConfig::default()
+        };
+        let snippets = vec![SnippetInfo {
+            filename: PathBuf::from("/snippets/a.toml"),
+            description: "greet".to_string(),
+            command: "echo hi".to_string(),
+            tag: vec!["demo".to_string()],
+            output: String::new(),
+        }];
+
+        let result = select_file(&general, &snippets, &SelectOptions::default()).unwrap();
+        assert_eq!(result, Some(PathBuf::from("/snippets/a.toml")));
+    }
+
+    #[test]
+    fn select_file_on_no_selection_returns_none() {
+        let general = GeneralConfig {
+            selectcmd: "false".to_string(),
+            ..GeneralConfig::default()
+        };
+        let snippets = vec![SnippetInfo {
+            filename: PathBuf::from("/snippets/a.toml"),
+            description: "greet".to_string(),
+            command: "echo hi".to_string(),
+            tag: vec![],
+            output: String::new(),
+        }];
+
+        let result = select_file(&general, &snippets, &SelectOptions::default()).unwrap();
+        assert_eq!(result, None);
     }
 }
