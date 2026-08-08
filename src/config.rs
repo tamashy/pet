@@ -207,9 +207,14 @@ fn default_editor() -> String {
 }
 
 fn is_command_available(name: &str) -> bool {
+    // Go's exec.Cmd discards Stdout/Stderr by default when unset; std::process::Command
+    // inherits them instead, so without this the `command -v` output (e.g. a resolved
+    // path) leaks straight into pet's own stdout on first run.
     std::process::Command::new("/bin/sh")
         .arg("-c")
         .arg(format!("command -v {name}"))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
