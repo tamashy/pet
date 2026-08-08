@@ -147,3 +147,51 @@ impl Snippets {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snippet(description: &str) -> SnippetInfo {
+        SnippetInfo {
+            filename: PathBuf::new(),
+            description: description.to_string(),
+            command: String::new(),
+            tag: vec![],
+            output: String::new(),
+        }
+    }
+
+    #[test]
+    fn order_on_empty_snippets_does_not_panic() {
+        let mut snippets = Snippets::default();
+        snippets.order("description");
+        assert!(snippets.snippets.is_empty());
+    }
+
+    #[test]
+    fn order_unknown_sortby_leaves_original_order_unchanged() {
+        let mut snippets = Snippets {
+            snippets: vec![snippet("b"), snippet("a"), snippet("c")],
+        };
+        snippets.order("not-a-real-sortby");
+        let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
+        assert_eq!(descs, vec!["b", "a", "c"]);
+    }
+
+    #[test]
+    fn order_empty_sortby_is_recency_noop() {
+        let mut snippets = Snippets {
+            snippets: vec![snippet("first"), snippet("second")],
+        };
+        snippets.order("");
+        let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
+        assert_eq!(descs, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn filter_by_tags_on_empty_snippets_returns_empty() {
+        let snippets = Snippets::default();
+        assert!(snippets.filter_by_tags(&["x".to_string()]).is_empty());
+    }
+}

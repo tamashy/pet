@@ -29,3 +29,40 @@ pub fn files_in_dir(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     files.sort();
     Ok(files)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expands_tilde_slash_to_home_dir() {
+        let home = dirs::home_dir().unwrap();
+        let result = expand_absolute("~/snippets/foo.toml").unwrap();
+        assert_eq!(result, home.join("snippets/foo.toml"));
+    }
+
+    #[test]
+    fn expands_bare_tilde_to_home_dir() {
+        let home = dirs::home_dir().unwrap();
+        let result = expand_absolute("~").unwrap();
+        assert_eq!(result, home);
+    }
+
+    #[test]
+    fn leaves_absolute_paths_unchanged() {
+        let result = expand_absolute("/etc/hosts").unwrap();
+        assert_eq!(result, PathBuf::from("/etc/hosts"));
+    }
+
+    #[test]
+    fn resolves_relative_paths_against_cwd() {
+        let result = expand_absolute("some/relative/path").unwrap();
+        assert!(result.is_absolute());
+        assert!(result.ends_with("some/relative/path"));
+    }
+
+    #[test]
+    fn does_not_require_the_path_to_exist() {
+        assert!(expand_absolute("/definitely/does/not/exist/anywhere").is_ok());
+    }
+}
