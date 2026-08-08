@@ -1,4 +1,4 @@
-use std::io::IsTerminal;
+use std::io::{self, IsTerminal, Write};
 
 use anyhow::Result;
 
@@ -33,10 +33,21 @@ pub fn run(config: &Config, opts: SearchOptions) -> Result<()> {
     // currently behaves like --raw regardless of the flag's value.
     let _ = opts.raw;
 
-    print!("{}", commands.join(&opts.delimiter));
-    if std::io::stdout().is_terminal() {
-        println!();
+    let mut output = commands.join(&opts.delimiter);
+    if io::stdout().is_terminal() {
+        output.push('\n');
     }
+    write_ignoring_broken_pipe(&output)
+}
 
-    Ok(())
+/// A downstream reader closing early (`pet search | head -1`, or a shell widget
+/// that only consumes part of the output) is normal, not an error — print! would
+/// panic on it since Rust ignores SIGPIPE by default and turns the write failure
+/// into a plain io::Error instead of terminating the process.
+fn write_ignoring_broken_pipe(s: &str) -> Result<()> {
+    match io::stdout().write_all(s.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        Err(err) => Err(err.into()),
+    }
 }

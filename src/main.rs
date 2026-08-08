@@ -8,27 +8,11 @@ use pet::cmd;
 use pet::config::{self, Config};
 
 fn main() {
-    reset_sigpipe();
-
     if let Err(err) = run() {
         eprintln!("{err}");
         std::process::exit(1);
     }
 }
-
-/// Rust ignores SIGPIPE by default and turns a write to a closed pipe into a panic
-/// instead. pet's output is routinely piped into other commands (`pet search | head`,
-/// shell widgets capturing `$(pet search ...)`); restore the standard Unix behavior
-/// (the process just exits) so a downstream reader closing early doesn't panic us.
-#[cfg(unix)]
-fn reset_sigpipe() {
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-    }
-}
-
-#[cfg(not(unix))]
-fn reset_sigpipe() {}
 
 fn run() -> Result<()> {
     let cli = Cli::parse();

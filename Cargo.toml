@@ -18,6 +18,3 @@ toml = "1.1.4"
 assert_cmd = "2.2.2"
 predicates = "3.1.4"
 tempfile = "3.27.0"
-
-[target."cfg(unix)".dependencies]
-libc = "0.2.189"

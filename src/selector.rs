@@ -78,8 +78,16 @@ fn run_selectcmd(
 
     {
         let mut stdin = child.stdin.take().expect("stdin was piped");
-        stdin.write_all(items.join("\n").as_bytes())?;
-        stdin.write_all(b"\n")?;
+        let mut payload = items.join("\n");
+        payload.push('\n');
+        // The selector closing stdin before reading everything is normal (`head -1`
+        // stops after one line; real fzf can exit as soon as the user picks), not a
+        // failure — only bubble up write errors that aren't that.
+        if let Err(err) = stdin.write_all(payload.as_bytes())
+            && err.kind() != std::io::ErrorKind::BrokenPipe
+        {
+            return Err(err).context("failed to write items to selector command");
+        }
     }
 
     let output = child

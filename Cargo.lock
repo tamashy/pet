@@ -397,7 +397,6 @@ dependencies = [
  "clap",
  "dialoguer",
  "dirs",
- "libc",
  "owo-colors",
  "predicates",
  "regex",
