@@ -7,16 +7,21 @@ use crate::config::GeneralConfig;
 use crate::error::SnippetError;
 use crate::path::{expand_absolute, files_in_dir};
 
+// Aliases accept the PascalCase keys pelletier/go-toml emits for untagged Go struct
+// fields (Description/Tag/Output have no `toml:"..."` tag in Go pet), so snippet
+// files from older pet installs still parse correctly. See config.rs for the same
+// pattern and rationale.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SnippetInfo {
     #[serde(skip)]
     pub filename: PathBuf,
-    #[serde(default)]
+    #[serde(default, alias = "Description")]
     pub description: String,
+    #[serde(alias = "Command")]
     pub command: String,
-    #[serde(default, rename = "tag")]
+    #[serde(default, rename = "tag", alias = "Tag")]
     pub tag: Vec<String>,
-    #[serde(default)]
+    #[serde(default, alias = "Output")]
     pub output: String,
 }
 

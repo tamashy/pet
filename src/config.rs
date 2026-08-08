@@ -25,27 +25,33 @@ fn default_backend() -> String {
     "gist".to_string()
 }
 
+// Aliases below accept the PascalCase keys that pelletier/go-toml emits for any Go
+// struct field without an explicit `toml:"..."` tag. Go pet's `GeneralConfig` has no
+// tags at all, so real-world config.toml files (including ones from older pet
+// installs) commonly use `Editor`, `SnippetFile`, `SortBy`, etc. instead of the
+// lowercase names shown in the README. Accept both so existing files load correctly;
+// we still always *write* lowercase (matching the currently-documented format).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneralConfig {
-    #[serde(default)]
+    #[serde(default, alias = "SnippetFile")]
     pub snippetfile: String,
-    #[serde(default)]
+    #[serde(default, alias = "SnippetDirs")]
     pub snippetdirs: Vec<String>,
-    #[serde(default)]
+    #[serde(default, alias = "Editor")]
     pub editor: String,
-    #[serde(default = "default_column")]
+    #[serde(default = "default_column", alias = "Column")]
     pub column: i32,
-    #[serde(default = "default_selectcmd")]
+    #[serde(default = "default_selectcmd", alias = "SelectCmd")]
     pub selectcmd: String,
-    #[serde(default = "default_backend")]
+    #[serde(default = "default_backend", alias = "Backend")]
     pub backend: String,
-    #[serde(default)]
+    #[serde(default, alias = "SortBy")]
     pub sortby: String,
-    #[serde(default = "default_cmd")]
+    #[serde(default = "default_cmd", alias = "Cmd")]
     pub cmd: Vec<String>,
-    #[serde(default)]
+    #[serde(default, alias = "Color")]
     pub color: bool,
-    #[serde(default = "default_format")]
+    #[serde(default = "default_format", alias = "Format")]
     pub format: String,
 }
 
@@ -74,7 +80,7 @@ pub struct GistConfig {
     pub access_token: String,
     #[serde(default, rename = "gist_id")]
     pub gist_id: String,
-    #[serde(default)]
+    #[serde(default, alias = "Public")]
     pub public: bool,
     #[serde(default, rename = "auto_sync")]
     pub auto_sync: bool,
@@ -86,11 +92,11 @@ pub struct GitLabConfig {
     pub file_name: String,
     #[serde(default, rename = "access_token")]
     pub access_token: String,
-    #[serde(default)]
+    #[serde(default, alias = "Url")]
     pub url: String,
-    #[serde(default)]
+    #[serde(default, alias = "ID")]
     pub id: String,
-    #[serde(default)]
+    #[serde(default, alias = "Visibility")]
     pub visibility: String,
     #[serde(default, rename = "auto_sync")]
     pub auto_sync: bool,
@@ -110,7 +116,7 @@ pub struct GheGistConfig {
     pub access_token: String,
     #[serde(default, rename = "gist_id")]
     pub gist_id: String,
-    #[serde(default)]
+    #[serde(default, alias = "Public")]
     pub public: bool,
     #[serde(default, rename = "auto_sync")]
     pub auto_sync: bool,
