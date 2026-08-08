@@ -59,7 +59,11 @@ pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
         vec![]
     };
 
-    if snippets.snippets.iter().any(|s| s.description == description) {
+    if snippets
+        .snippets
+        .iter()
+        .any(|s| s.description == description)
+    {
         bail!("snippet [{description}] already exists");
     }
 
@@ -111,11 +115,51 @@ fn scan_plain(prompt: &str, allow_empty: bool) -> Result<String> {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MultilineState {
     Start,
     LastLineNotEmpty,
     LastLineEmpty,
+}
+
+enum MultilineStep {
+    Continue(MultilineState),
+    Done,
+}
+
+/// Pure state transition for multiline command entry: two consecutive blank lines
+/// (after at least one non-blank line) finish the snippet. Appends `line` to `buf`
+/// as needed and returns the next state, kept separate from the stdin-reading loop
+/// in `scan_multiline` so it's testable without any I/O.
+fn multiline_step(state: MultilineState, buf: &mut String, line: &str) -> MultilineStep {
+    match state {
+        MultilineState::Start => {
+            if line.is_empty() {
+                MultilineStep::Continue(MultilineState::Start)
+            } else {
+                buf.push_str(line);
+                MultilineStep::Continue(MultilineState::LastLineNotEmpty)
+            }
+        }
+        MultilineState::LastLineNotEmpty => {
+            if line.is_empty() {
+                MultilineStep::Continue(MultilineState::LastLineEmpty)
+            } else {
+                buf.push('\n');
+                buf.push_str(line);
+                MultilineStep::Continue(MultilineState::LastLineNotEmpty)
+            }
+        }
+        MultilineState::LastLineEmpty => {
+            if line.is_empty() {
+                MultilineStep::Done
+            } else {
+                buf.push('\n');
+                buf.push_str(line);
+                MultilineStep::Continue(MultilineState::LastLineNotEmpty)
+            }
+        }
+    }
 }
 
 /// Reads lines from stdin until two consecutive blank lines are entered. Mirrors Go
@@ -137,31 +181,14 @@ fn scan_multiline() -> Result<String> {
         }
         let line = line.trim_end_matches('\n');
 
-        match state {
-            MultilineState::Start => {
-                if line.is_empty() {
-                    continue;
+        match multiline_step(state, &mut multiline, line) {
+            MultilineStep::Done => return Ok(multiline),
+            MultilineStep::Continue(next) => {
+                if state == MultilineState::Start && next == MultilineState::LastLineNotEmpty {
+                    print!("{} ", "......>".bright_yellow());
+                    io::stdout().flush()?;
                 }
-                multiline.push_str(line);
-                state = MultilineState::LastLineNotEmpty;
-                print!("{} ", "......>".bright_yellow());
-                io::stdout().flush()?;
-            }
-            MultilineState::LastLineNotEmpty => {
-                if line.is_empty() {
-                    state = MultilineState::LastLineEmpty;
-                } else {
-                    multiline.push('\n');
-                    multiline.push_str(line);
-                }
-            }
-            MultilineState::LastLineEmpty => {
-                if line.is_empty() {
-                    return Ok(multiline);
-                }
-                multiline.push('\n');
-                multiline.push_str(line);
-                state = MultilineState::LastLineNotEmpty;
+                state = next;
             }
         }
     }
@@ -171,4 +198,63 @@ fn count_snippet_lines(general: &crate::config::GeneralConfig) -> Result<usize> 
     let path = expand_absolute(&general.snippetfile)?;
     let contents = std::fs::read_to_string(&path)?;
     Ok(contents.matches('\n').count())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_lines(lines: &[&str]) -> Option<String> {
+        let mut state = MultilineState::Start;
+        let mut buf = String::new();
+        for line in lines {
+            match multiline_step(state, &mut buf, line) {
+                MultilineStep::Done => return Some(buf),
+                MultilineStep::Continue(next) => state = next,
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn leading_blank_lines_are_ignored() {
+        let mut state = MultilineState::Start;
+        let mut buf = String::new();
+        let MultilineStep::Continue(next) = multiline_step(state, &mut buf, "") else {
+            panic!("expected Continue");
+        };
+        assert_eq!(next, MultilineState::Start);
+        assert!(buf.is_empty());
+        state = next;
+
+        let MultilineStep::Continue(next) = multiline_step(state, &mut buf, "echo hi") else {
+            panic!("expected Continue");
+        };
+        assert_eq!(next, MultilineState::LastLineNotEmpty);
+        assert_eq!(buf, "echo hi");
+    }
+
+    #[test]
+    fn single_blank_line_does_not_finish_the_snippet() {
+        let result = run_lines(&["echo one", "echo two", ""]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn two_consecutive_blank_lines_finish_the_snippet() {
+        let result = run_lines(&["echo one", "echo two", "", ""]);
+        assert_eq!(result, Some("echo one\necho two".to_string()));
+    }
+
+    #[test]
+    fn a_blank_line_followed_by_more_input_keeps_going() {
+        let result = run_lines(&["echo one", "", "echo two", "", ""]);
+        assert_eq!(result, Some("echo one\necho two".to_string()));
+    }
+
+    #[test]
+    fn single_line_command_needs_only_one_double_blank() {
+        let result = run_lines(&["echo hi", "", ""]);
+        assert_eq!(result, Some("echo hi".to_string()));
+    }
 }

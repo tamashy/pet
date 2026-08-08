@@ -1,0 +1,107 @@
+name: Release
+
+# Every push to main (i.e. every merged PR) bumps the patch version, tags it,
+# builds release binaries, and publishes a GitHub Release.
+#
+# The version-bump commit is pushed back to main using the default GITHUB_TOKEN.
+# GitHub does not re-trigger workflows for pushes made with GITHUB_TOKEN, so this
+# does not loop; the "[skip release]" marker in the commit message is kept as a
+# second, explicit guard in case that ever changes (e.g. a PAT is swapped in).
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+      - id: bump
+        run: |
+          set -euo pipefail
+          current=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          IFS='.' read -r major minor patch <<< "$current"
+          new="$major.$minor.$((patch + 1))"
+          awk -v new="$new" '
+            !done && /^version = "/ { sub(/version = "[^"]*"/, "version = \"" new "\""); done=1 }
+            { print }
+          ' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+          cargo check --quiet
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore(release): bump version to $new [skip release]"
+          git tag "v$new"
+          git push origin HEAD:main
+          git push origin "v$new"
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+          echo "tag=v$new" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: bump-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.bump-version.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          set -euo pipefail
+          out="pet-${{ needs.bump-version.outputs.tag }}-${{ matrix.target }}"
+          mkdir -p "$out"
+          cp "target/${{ matrix.target }}/release/pet" "$out/"
+          cp README.md LICENSE "$out/" 2>/dev/null || true
+          tar -czf "$out.tar.gz" "$out"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pet-${{ matrix.target }}
+          path: pet-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [bump-version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.bump-version.outputs.tag }}
+          name: ${{ needs.bump-version.outputs.tag }}
+          generate_release_notes: true
+          files: dist/*.tar.gz

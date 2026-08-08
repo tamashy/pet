@@ -38,12 +38,11 @@ impl Snippets {
     pub fn load(general: &GeneralConfig, include_dirs: bool) -> Result<Snippets, SnippetError> {
         let mut snippet_files: Vec<PathBuf> = Vec::new();
 
-        let snippet_file_path = expand_absolute(&general.snippetfile).map_err(|source| {
-            SnippetError::Read {
+        let snippet_file_path =
+            expand_absolute(&general.snippetfile).map_err(|source| SnippetError::Read {
                 path: PathBuf::from(&general.snippetfile),
                 source,
-            }
-        })?;
+            })?;
 
         if snippet_file_path.exists() {
             snippet_files.push(snippet_file_path);
@@ -53,11 +52,10 @@ impl Snippets {
 
         if include_dirs {
             for dir in &general.snippetdirs {
-                let abs_dir =
-                    expand_absolute(dir).map_err(|source| SnippetError::Read {
-                        path: PathBuf::from(dir),
-                        source,
-                    })?;
+                let abs_dir = expand_absolute(dir).map_err(|source| SnippetError::Read {
+                    path: PathBuf::from(dir),
+                    source,
+                })?;
                 if !abs_dir.exists() {
                     return Err(SnippetError::SnippetDirNotFound(abs_dir));
                 }
@@ -124,9 +122,7 @@ impl Snippets {
     /// Supported: recency (default, no-op), -recency, [+-]description, [+-]command, [+-]output.
     pub fn order(&mut self, sortby: &str) {
         match sortby {
-            "command" | "+command" => self
-                .snippets
-                .sort_by(|a, b| b.command.cmp(&a.command)),
+            "command" | "+command" => self.snippets.sort_by(|a, b| b.command.cmp(&a.command)),
             "-command" => self.snippets.sort_by(|a, b| a.command.cmp(&b.command)),
             "description" | "+description" => self
                 .snippets
@@ -149,5 +145,53 @@ impl Snippets {
             .filter(|s| !s.tag.is_empty() && s.tag.iter().any(|t| tags.contains(t)))
             .cloned()
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snippet(description: &str) -> SnippetInfo {
+        SnippetInfo {
+            filename: PathBuf::new(),
+            description: description.to_string(),
+            command: String::new(),
+            tag: vec![],
+            output: String::new(),
+        }
+    }
+
+    #[test]
+    fn order_on_empty_snippets_does_not_panic() {
+        let mut snippets = Snippets::default();
+        snippets.order("description");
+        assert!(snippets.snippets.is_empty());
+    }
+
+    #[test]
+    fn order_unknown_sortby_leaves_original_order_unchanged() {
+        let mut snippets = Snippets {
+            snippets: vec![snippet("b"), snippet("a"), snippet("c")],
+        };
+        snippets.order("not-a-real-sortby");
+        let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
+        assert_eq!(descs, vec!["b", "a", "c"]);
+    }
+
+    #[test]
+    fn order_empty_sortby_is_recency_noop() {
+        let mut snippets = Snippets {
+            snippets: vec![snippet("first"), snippet("second")],
+        };
+        snippets.order("");
+        let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
+        assert_eq!(descs, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn filter_by_tags_on_empty_snippets_returns_empty() {
+        let snippets = Snippets::default();
+        assert!(snippets.filter_by_tags(&["x".to_string()]).is_empty());
     }
 }

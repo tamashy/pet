@@ -191,15 +191,29 @@ impl Config {
 }
 
 fn default_editor() -> String {
-    if let Ok(editor) = std::env::var("EDITOR")
-        && !editor.is_empty()
-    {
+    let env_editor = std::env::var("EDITOR")
+        .ok()
+        .filter(|editor| !editor.is_empty());
+    pick_editor(env_editor, cfg!(windows), || {
+        is_command_available("sensible-editor")
+    })
+}
+
+/// Pure decision logic behind `default_editor`, split out so it's testable without
+/// touching real env vars or spawning a subprocess. `sensible_editor_available` is
+/// lazy (only called when actually needed) to match the original short-circuiting.
+fn pick_editor(
+    env_editor: Option<String>,
+    is_windows: bool,
+    sensible_editor_available: impl FnOnce() -> bool,
+) -> String {
+    if let Some(editor) = env_editor {
         return editor;
     }
-    if cfg!(windows) {
+    if is_windows {
         return String::new();
     }
-    if is_command_available("sensible-editor") {
+    if sensible_editor_available() {
         "sensible-editor".to_string()
     } else {
         "vim".to_string()
@@ -207,9 +221,14 @@ fn default_editor() -> String {
 }
 
 fn is_command_available(name: &str) -> bool {
+    // Go's exec.Cmd discards Stdout/Stderr by default when unset; std::process::Command
+    // inherits them instead, so without this the `command -v` output (e.g. a resolved
+    // path) leaks straight into pet's own stdout on first run.
     std::process::Command::new("/bin/sh")
         .arg("-c")
         .arg(format!("command -v {name}"))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
@@ -240,4 +259,37 @@ pub fn default_config_dir() -> Result<PathBuf, ConfigError> {
         path: dir.clone(),
         source,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pick_editor_prefers_env_var_over_everything_else() {
+        let editor = pick_editor(Some("nvim".to_string()), false, || {
+            panic!("sensible-editor check should not run when $EDITOR is set")
+        });
+        assert_eq!(editor, "nvim");
+    }
+
+    #[test]
+    fn pick_editor_on_windows_without_env_var_is_empty() {
+        let editor = pick_editor(None, true, || {
+            panic!("sensible-editor check should not run on windows")
+        });
+        assert_eq!(editor, "");
+    }
+
+    #[test]
+    fn pick_editor_falls_back_to_sensible_editor_when_available() {
+        let editor = pick_editor(None, false, || true);
+        assert_eq!(editor, "sensible-editor");
+    }
+
+    #[test]
+    fn pick_editor_falls_back_to_vim_when_sensible_editor_missing() {
+        let editor = pick_editor(None, false, || false);
+        assert_eq!(editor, "vim");
+    }
 }
