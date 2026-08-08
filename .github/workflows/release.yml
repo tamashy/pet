@@ -26,7 +26,7 @@ jobs:
       version: ${{ steps.bump.outputs.version }}
       tag: ${{ steps.bump.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -67,7 +67,7 @@ jobs:
             os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.bump-version.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
@@ -85,7 +85,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/pet" "$out/"
           cp README.md LICENSE "$out/" 2>/dev/null || true
           tar -czf "$out.tar.gz" "$out"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pet-${{ matrix.target }}
           path: pet-*.tar.gz
@@ -95,11 +95,11 @@ jobs:
     needs: [bump-version, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.bump-version.outputs.tag }}
           name: ${{ needs.bump-version.outputs.tag }}
