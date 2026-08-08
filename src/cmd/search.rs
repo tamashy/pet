@@ -3,6 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use anyhow::Result;
 
 use crate::config::Config;
+use crate::dialog;
 use crate::selector::{self, SelectOptions};
 use crate::snippet::Snippets;
 
@@ -22,16 +23,28 @@ pub fn run(config: &Config, opts: SearchOptions) -> Result<()> {
     let select_opts = SelectOptions {
         query: opts.query.clone(),
     };
-    let commands = selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;
+    let mut commands =
+        selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;
 
     if commands.is_empty() {
         return Ok(());
     }
 
-    // Parameter substitution (<name>/<name=default>) lands with dialog.rs; until
-    // then every selection prints its stored command verbatim, i.e. every search
-    // currently behaves like --raw regardless of the flag's value.
-    let _ = opts.raw;
+    // Parameter substitution only kicks in for a single selected snippet, matching
+    // Go pet's cmd/util.go `filter()` exactly: a multi-select or --raw always
+    // returns the stored command(s) verbatim, and a param-less command is a no-op
+    // either way (extract_params returns empty).
+    if !opts.raw && commands.len() == 1 {
+        let params = dialog::extract_params(&commands[0]);
+        if !params.is_empty() {
+            match dialog::resolve_params(&params, &commands[0])? {
+                Some(values) => commands[0] = dialog::substitute(&commands[0], &values),
+                // Cancelled (Esc/Ctrl-C): print nothing, same as a cancelled
+                // selector pick, rather than treating it as a hard error.
+                None => return Ok(()),
+            }
+        }
+    }
 
     let mut output = commands.join(&opts.delimiter);
     if io::stdout().is_terminal() {
