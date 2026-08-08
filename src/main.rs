@@ -24,8 +24,27 @@ fn run() -> Result<()> {
     let cfg = Config::load(&config_path)?;
 
     match cli.command {
+        Commands::New {
+            command,
+            tag,
+            multiline,
+            editor,
+        } => {
+            cmd::new::run(
+                &cfg,
+                cmd::new::NewOptions {
+                    command_args: command,
+                    prompt_tag: tag,
+                    multiline,
+                    use_editor: editor,
+                },
+            )?;
+        }
         Commands::List { oneline, tags } => {
             cmd::list::run(&cfg, oneline, tags.as_deref(), cli.debug)?;
+        }
+        Commands::Configure => {
+            cmd::configure::run(&cfg, &config_path)?;
         }
         Commands::Version => {
             cmd::version::run();
