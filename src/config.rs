@@ -66,7 +66,12 @@ impl Default for GeneralConfig {
             backend: default_backend(),
             sortby: String::new(),
             cmd: default_cmd(),
-            color: false,
+            // Only the value baked into freshly-generated config.toml files
+            // (Config::load's first-run path) — the `color` field's own
+            // `#[serde(default)]` stays bool::default() (false) so a config.toml
+            // that omits the key entirely (e.g. an old Go pet config someone
+            // points --config at) keeps behaving exactly like it always did.
+            color: true,
             format: default_format(),
         }
     }

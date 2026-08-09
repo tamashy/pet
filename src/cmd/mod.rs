@@ -1,5 +1,6 @@
 pub mod clip;
 pub mod configure;
+pub mod delete;
 pub mod edit;
 pub mod exec;
 pub mod list;

@@ -46,6 +46,9 @@ fn run() -> Result<()> {
         Commands::Configure => {
             cmd::configure::run(&cfg, &config_path)?;
         }
+        Commands::Delete { query, tag, color } => {
+            cmd::delete::run(&cfg, cmd::delete::DeleteOptions { query, tag, color })?;
+        }
         Commands::Edit { query, tag } => {
             cmd::edit::run(&cfg, cmd::edit::EditOptions { query, tag })?;
         }

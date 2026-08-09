@@ -47,6 +47,20 @@ pub enum Commands {
     },
     /// Edit config file
     Configure,
+    /// Delete a snippet
+    Delete {
+        /// Initial value for query
+        #[arg(short = 'q', long = "query")]
+        query: Option<String>,
+
+        /// Filter tag
+        #[arg(short = 't', long = "tag")]
+        tag: Option<String>,
+
+        /// Enable colorized output (only fzf)
+        #[arg(long)]
+        color: bool,
+    },
     /// Edit snippet file (default: opened by vim)
     Edit {
         /// Initial value for query
