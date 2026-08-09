@@ -108,10 +108,16 @@ pub enum FieldKind {
 pub struct Field {
     pub name: String,
     pub kind: FieldKind,
+    /// Whether the source `<name=default>` had a non-empty default. Used only to
+    /// decide whether to flag the field as needing input while its buffer is still
+    /// empty — Go pet never enforces this (an empty value substitutes as ""), so
+    /// this is advisory styling only, not validation.
+    has_default: bool,
 }
 
 impl Field {
     fn new(param: &Param) -> Self {
+        let has_default = !param.default.is_empty();
         match parse_options(&param.default) {
             Some(options) => Field {
                 name: param.name.clone(),
@@ -119,6 +125,7 @@ impl Field {
                     options,
                     selected: 0,
                 },
+                has_default,
             },
             None => {
                 let buffer = param.default.clone();
@@ -126,6 +133,7 @@ impl Field {
                 Field {
                     name: param.name.clone(),
                     kind: FieldKind::Text { buffer, cursor },
+                    has_default,
                 }
             }
         }
@@ -135,6 +143,16 @@ impl Field {
         match &self.kind {
             FieldKind::Text { buffer, .. } => buffer.clone(),
             FieldKind::Options { options, selected } => options[*selected].clone(),
+        }
+    }
+
+    /// A text field with no default, still empty — the one case worth flagging
+    /// visually since there's no value to fall back to (Options fields always
+    /// have a selected value, so they're never "empty").
+    fn needs_input(&self) -> bool {
+        match &self.kind {
+            FieldKind::Text { buffer, .. } => !self.has_default && buffer.is_empty(),
+            FieldKind::Options { .. } => false,
         }
     }
 }
@@ -325,65 +343,202 @@ fn run_dialog_loop(
     }
 }
 
+const FIELD_HEIGHT: u16 = 3;
+const PREVIEW_HEIGHT: u16 = 3;
+const FOOTER_HEIGHT: u16 = 1;
+const SCROLL_HINT_HEIGHT: u16 = 1;
+
+/// Which fields are on screen, as a `[start, end)` range into `state.fields`, given
+/// how many field rows fit (`capacity`). Keeps `state.focus` inside the window,
+/// scrolling the minimum amount needed rather than re-centering every frame.
+fn visible_window(total: usize, focus: usize, capacity: usize) -> (usize, usize) {
+    if capacity == 0 || total <= capacity {
+        return (0, total);
+    }
+    let max_start = total - capacity;
+    let start = if focus >= capacity {
+        (focus + 1 - capacity).min(max_start)
+    } else {
+        0
+    };
+    (start, start + capacity)
+}
+
 fn render(frame: &mut ratatui::Frame, state: &DialogState, command: &str) {
-    use ratatui::layout::{Constraint, Direction, Layout};
-    use ratatui::style::{Modifier, Style};
+    use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
     use ratatui::widgets::{Block, Borders, Paragraph};
 
     let preview = substitute(command, &state.values());
+    let area = frame.area();
 
-    let mut constraints = vec![Constraint::Length(3)];
+    // Two passes: first assume no scroll-hint lines are needed. If that lets every
+    // field fit, great — no hints will be drawn, so that capacity is correct. If
+    // not, scrolling kicks in and up to two one-line hints ("N more above/below")
+    // eat into the space actually available for fields; recompute reserving room
+    // for both so the fixed-height Preview/field boxes below never get squeezed by
+    // the layout solver running short of rows.
+    let fields_len = state.fields.len();
+    let unhinted_capacity = area
+        .height
+        .saturating_sub(PREVIEW_HEIGHT + FOOTER_HEIGHT)
+        .checked_div(FIELD_HEIGHT)
+        .unwrap_or(0) as usize;
+    let capacity = if fields_len <= unhinted_capacity {
+        unhinted_capacity.max(1)
+    } else {
+        area.height
+            .saturating_sub(PREVIEW_HEIGHT + FOOTER_HEIGHT + 2 * SCROLL_HINT_HEIGHT)
+            .checked_div(FIELD_HEIGHT)
+            .unwrap_or(0)
+            .max(1) as usize
+    };
+    let (start, end) = visible_window(fields_len, state.focus, capacity);
+    let more_above = start > 0;
+    let more_below = end < state.fields.len();
+
+    let mut constraints = vec![Constraint::Length(PREVIEW_HEIGHT)];
+    if more_above {
+        constraints.push(Constraint::Length(SCROLL_HINT_HEIGHT));
+    }
     constraints.extend(std::iter::repeat_n(
-        Constraint::Length(3),
-        state.fields.len(),
+        Constraint::Length(FIELD_HEIGHT),
+        end - start,
     ));
+    if more_below {
+        constraints.push(Constraint::Length(SCROLL_HINT_HEIGHT));
+    }
     constraints.push(Constraint::Min(0));
+    constraints.push(Constraint::Length(FOOTER_HEIGHT));
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
-        .split(frame.area());
+        .split(area);
 
-    let preview_widget = Paragraph::new(preview).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Command  (Tab/Shift-Tab: switch field · Enter: run · Esc: cancel)"),
-    );
+    let preview_widget = Paragraph::new(preview)
+        .style(Style::default().fg(Color::White))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(Span::styled(
+                    " Preview ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )),
+        );
     frame.render_widget(preview_widget, chunks[0]);
 
-    for (i, field) in state.fields.iter().enumerate() {
-        let focused = i == state.focus;
-        let style = if focused {
-            Style::default().add_modifier(Modifier::REVERSED)
-        } else {
-            Style::default()
-        };
+    let mut row = 1;
+    if more_above {
+        frame.render_widget(
+            Paragraph::new(format!("▲ {start} more above"))
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center),
+            chunks[row],
+        );
+        row += 1;
+    }
 
-        let content = match &field.kind {
-            FieldKind::Text { buffer, .. } => buffer.clone(),
-            FieldKind::Options {
-                options, selected, ..
-            } => format!(
-                "{}   (↑/↓ {}/{})",
-                options[*selected],
-                selected + 1,
-                options.len()
-            ),
+    for (offset, i) in (start..end).enumerate() {
+        let field = &state.fields[i];
+        let focused = i == state.focus;
+        let needs_input = field.needs_input();
+        let chunk = chunks[row + offset];
+
+        let border_color = match (focused, needs_input) {
+            (_, true) => Color::Red,
+            (true, false) => Color::Yellow,
+            (false, false) => Color::DarkGray,
+        };
+        let mut title_style = Style::default().fg(border_color);
+        if focused {
+            title_style = title_style.add_modifier(Modifier::BOLD);
+        }
+        let title = if needs_input {
+            format!(" {} (required) ", field.name)
+        } else {
+            format!(" {} ", field.name)
         };
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(field.name.clone());
-        frame.render_widget(
-            Paragraph::new(content).style(style).block(block),
-            chunks[i + 1],
-        );
+            .border_style(Style::default().fg(border_color))
+            .title(Span::styled(title, title_style));
+
+        match &field.kind {
+            FieldKind::Text { buffer, .. } => {
+                let style = if focused {
+                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                frame.render_widget(
+                    Paragraph::new(buffer.clone()).style(style).block(block),
+                    chunk,
+                );
+            }
+            FieldKind::Options { options, selected } => {
+                let mut spans = Vec::with_capacity(options.len() * 2);
+                for (opt_i, opt) in options.iter().enumerate() {
+                    if opt_i > 0 {
+                        spans.push(Span::raw("  "));
+                    }
+                    if opt_i == *selected {
+                        spans.push(Span::styled(
+                            format!(" {opt} "),
+                            Style::default()
+                                .fg(Color::Black)
+                                .bg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ));
+                    } else {
+                        spans.push(Span::styled(
+                            opt.clone(),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    }
+                }
+                spans.push(Span::styled(
+                    format!("   (←/→ {}/{})", selected + 1, options.len()),
+                    Style::default().fg(Color::DarkGray),
+                ));
+                frame.render_widget(Paragraph::new(Line::from(spans)).block(block), chunk);
+            }
+        }
 
         if focused && let FieldKind::Text { cursor, .. } = &field.kind {
-            let rect = chunks[i + 1];
-            frame.set_cursor_position((rect.x + 1 + *cursor as u16, rect.y + 1));
+            frame.set_cursor_position((chunk.x + 1 + *cursor as u16, chunk.y + 1));
         }
     }
+    row += end - start;
+
+    if more_below {
+        frame.render_widget(
+            Paragraph::new(format!("▼ {} more below", state.fields.len() - end))
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center),
+            chunks[row],
+        );
+    }
+
+    let footer = Line::from(vec![
+        Span::styled(
+            format!("Field {}/{}", state.focus + 1, state.fields.len()),
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(
+            "   Tab/Shift-Tab move   ↑/↓ edit or cycle   Enter run   Esc cancel",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]);
+    frame.render_widget(
+        Paragraph::new(footer).alignment(Alignment::Center),
+        chunks[chunks.len() - 1],
+    );
 }
 
 #[cfg(test)]
@@ -796,5 +951,67 @@ mod tests {
         let values = done_values(handle_key(state, KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(values.get("greeting").map(String::as_str), Some("hi!"));
         assert_eq!(values.get("color").map(String::as_str), Some("blue"));
+    }
+
+    // Field::needs_input: advisory "empty and no default" styling used by render().
+
+    #[test]
+    fn text_field_with_no_default_needs_input_while_empty() {
+        let state = DialogState::new(&params(&[("name", "")]));
+        assert!(state.fields[0].needs_input());
+    }
+
+    #[test]
+    fn text_field_with_default_never_needs_input() {
+        let state = DialogState::new(&params(&[("name", "world")]));
+        assert!(!state.fields[0].needs_input());
+    }
+
+    #[test]
+    fn text_field_with_no_default_stops_needing_input_once_typed() {
+        let state = DialogState::new(&params(&[("name", "")]));
+        let state = continuing(handle_key(state, KeyCode::Char('x'), KeyModifiers::NONE));
+        assert!(!state.fields[0].needs_input());
+    }
+
+    #[test]
+    fn text_field_with_no_default_needs_input_again_once_cleared() {
+        let state = DialogState::new(&params(&[("name", "")]));
+        let typed = continuing(handle_key(state, KeyCode::Char('x'), KeyModifiers::NONE));
+        assert!(!typed.fields[0].needs_input());
+        let cleared = continuing(handle_key(typed, KeyCode::Backspace, KeyModifiers::NONE));
+        assert!(cleared.fields[0].needs_input());
+    }
+
+    #[test]
+    fn options_field_never_needs_input() {
+        let state = DialogState::new(&params(&[("color", "|_red_||_blue_|")]));
+        assert!(!state.fields[0].needs_input());
+    }
+
+    // visible_window: the scroll-to-keep-focus-visible logic used by render().
+
+    #[test]
+    fn visible_window_shows_everything_when_it_all_fits() {
+        assert_eq!(visible_window(3, 0, 5), (0, 3));
+        assert_eq!(visible_window(3, 2, 3), (0, 3));
+    }
+
+    #[test]
+    fn visible_window_stays_at_top_while_focus_is_within_the_first_page() {
+        assert_eq!(visible_window(10, 0, 3), (0, 3));
+        assert_eq!(visible_window(10, 2, 3), (0, 3));
+    }
+
+    #[test]
+    fn visible_window_scrolls_forward_to_keep_focus_in_view() {
+        assert_eq!(visible_window(10, 3, 3), (1, 4));
+        assert_eq!(visible_window(10, 9, 3), (7, 10));
+    }
+
+    #[test]
+    fn visible_window_never_scrolls_past_the_last_page() {
+        // Even at the very last field, the window shouldn't run off the end.
+        assert_eq!(visible_window(5, 4, 3), (2, 5));
     }
 }

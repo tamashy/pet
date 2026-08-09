@@ -19,34 +19,56 @@ pub struct SelectOptions {
 }
 
 /// Format every snippet via `general.format`, run the result through the configured
-/// selector, and map each selected line back to its stored (unflattened) command.
-/// Shared by `search`/`exec`/`clip`.
-pub fn select_commands(
+/// selector, and map each selected line back to its full stored snippet. Shared by
+/// `search`/`exec`/`clip` (via `select_commands`) and `delete`, which — unlike the
+/// others — needs the whole `SnippetInfo` (description, tags, origin file) to
+/// identify what to remove, not just the resolved command text.
+pub fn select_snippets(
     general: &GeneralConfig,
     snippets: &[SnippetInfo],
     opts: &SelectOptions,
-) -> Result<Vec<String>> {
+) -> Result<Vec<SnippetInfo>> {
     let color = general.color || opts.color;
-    let mut lookup: HashMap<String, String> = HashMap::new();
+    let mut lookup: HashMap<String, SnippetInfo> = HashMap::new();
     let mut items = Vec::with_capacity(snippets.len());
 
     for s in snippets {
-        let text = render_template(&general.format, &s.description, &s.command, &s.tag, color);
-        items.push(text.clone());
-        // Last-write-wins on duplicate display text, matching Go pet's own
-        // map[string]SnippetInfo lookup (built from the identical formatted text).
-        // Unlike Go, we key the lookup off the *same* (possibly colored) text
-        // that's actually sent to the selector — Go's version builds the map key
-        // from the uncolored text but sends the colored text to fzf, so a
-        // selection made while `color` is enabled can fail to map back to its
-        // snippet there.
-        lookup.insert(text, s.command.clone());
+        let plain = render_template(&general.format, &s.description, &s.command, &s.tag, false);
+        if color {
+            let colored =
+                render_template(&general.format, &s.description, &s.command, &s.tag, true);
+            items.push(colored.clone());
+            // fzf's `--ansi` (the default selectcmd) strips color codes from the
+            // line it hands back on selection, so the returned text matches
+            // `plain`, not what was actually sent. But not every selector does
+            // that stripping — a plain passthrough like `cat`, or a selector
+            // without ANSI support, echoes the line verbatim, matching `colored`
+            // instead. Index both so either kind of selector maps back correctly.
+            lookup.insert(colored, s.clone());
+            lookup.insert(plain, s.clone());
+        } else {
+            items.push(plain.clone());
+            lookup.insert(plain, s.clone());
+        }
     }
 
     let selected_lines = run_selectcmd(general, &items, opts)?;
     Ok(selected_lines
         .into_iter()
         .filter_map(|line| lookup.get(&line).cloned())
+        .collect())
+}
+
+/// Same selection as `select_snippets`, but returning just the resolved command
+/// text — what `search`/`exec`/`clip` actually need.
+pub fn select_commands(
+    general: &GeneralConfig,
+    snippets: &[SnippetInfo],
+    opts: &SelectOptions,
+) -> Result<Vec<String>> {
+    Ok(select_snippets(general, snippets, opts)?
+        .into_iter()
+        .map(|s| s.command)
         .collect())
 }
 
@@ -181,6 +203,29 @@ mod tests {
 
         let result = select_commands(&general, &snippets, &SelectOptions::default()).unwrap();
         assert_eq!(result, vec!["echo hi".to_string()]);
+    }
+
+    #[test]
+    fn select_snippets_returns_the_whole_matched_snippet_not_just_its_command() {
+        let general = GeneralConfig {
+            selectcmd: "cat".to_string(),
+            ..GeneralConfig::default()
+        };
+        let snippet = SnippetInfo {
+            filename: PathBuf::from("/snippets/a.toml"),
+            description: "greet".to_string(),
+            command: "echo hi".to_string(),
+            tag: vec!["demo".to_string()],
+            output: String::new(),
+        };
+
+        let result = select_snippets(
+            &general,
+            std::slice::from_ref(&snippet),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(result, vec![snippet]);
     }
 
     #[test]

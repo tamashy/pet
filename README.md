@@ -1,13 +1,13 @@
-# pet (Rust)
+# pet
 
-A Rust rewrite of [`knqyf263/pet`](https://github.com/knqyf263/pet), a simple
-command-line snippet manager. Save the commands you always forget, tag them,
-find them again in seconds, and run them without retyping — all from the
-terminal.
+A command-line snippet manager, written in Rust. Save the commands you always
+forget, tag them, find them again in seconds, and run them without retyping —
+all from the terminal. Originally inspired by
+[`knqyf263/pet`](https://github.com/knqyf263/pet), it's grown its own feature
+set since.
 
-It reads and writes the same `config.toml` / `snippet.toml` format as the
-original Go `pet`, so it's a drop-in replacement: it picks up an existing
-`~/.config/pet` automatically, no migration needed.
+Config and snippets are plain TOML files under `~/.config/pet` (or wherever
+`PET_CONFIG_DIR`/`--config` points), created automatically on first run.
 
 ## Why
 
@@ -27,11 +27,12 @@ search — without digging through shell history or a notes file.
   (`<name>`, `<name=default>`, `<name=|_option_a_||_option_b_|>`)
 - Snippets are a plain TOML file, so `pet edit` (or any text editor) works
   too
-- Reads existing `pet` config/snippet files, including older ones that
+- Fuzzy-select and delete a snippet without hand-editing the TOML (`pet
+  delete`)
+- Reads config/snippet files from older installs too, including ones that
   predate the current field-casing conventions
 
-Not implemented (yet): syncing snippets via Gist/GitLab/GHE. Everything else
-from the original `pet` is here.
+Not yet implemented: syncing snippets via Gist/GitLab/GHE.
 
 ## Installation
 
@@ -88,8 +89,9 @@ pet [command]
 Commands:
   new         Create a new snippet
   list        Show all snippets
-  edit        Edit snippet file
   configure   Edit config file
+  delete      Delete a snippet
+  edit        Edit snippet file
   search      Search snippets interactively
   exec        Run the selected commands
   clip        Copy the selected commands to clipboard
@@ -123,6 +125,17 @@ pet list --oneline            # one line per snippet
 pet list -t tag1,tag2         # only snippets tagged tag1 OR tag2
 ```
 
+### `pet delete`
+
+Fuzzy-select one or more snippets and delete them. Hand-editing the TOML file
+(`pet edit`) still works too, if you prefer.
+
+```bash
+pet delete                    # pick one or more snippets to remove
+pet delete -t net              # only offer snippets tagged "net"
+pet delete -q "docker"         # pre-fill the fzf query
+```
+
 ### `pet search` / `pet exec` / `pet clip`
 
 Fuzzy-select one or more snippets, then respectively print, run, or copy the
@@ -141,7 +154,7 @@ pet exec -s                   # ...without echoing "> command" first
 pet clip                      # copy the selected command to the clipboard
 pet clip --command             # ...and print what was copied
 
-pet search --color             # colorize description/tags in the fzf list (needs --ansi in selectcmd, on by default)
+pet search --color             # force description/tags coloring in the fzf list even if config.toml disables it (needs --ansi in selectcmd, on by default)
 ```
 
 If exactly one snippet is selected (not `--raw`) and its command contains a
@@ -194,7 +207,7 @@ directly with `--config`. It's created for you on first run.
   sortby = ""                      # recency (default) | -recency | description | -description | command | -command | output | -output
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
   format = "[$description]: $command $tags"   # how snippets are displayed to the selector
-  color = false                    # force-colorize description/tags in the selector list, same as --color
+  color = true                     # colorize description/tags in the selector list, same as --color (default: true for new configs; set false to disable)
 ```
 
 Snippets are plain TOML (`pet edit` to open it directly):
@@ -247,7 +260,5 @@ your real config.
 
 ## Credits
 
-All credit for the design and feature set goes to [Teppei Fukuda
-(knqyf263)](https://github.com/knqyf263) and `pet`'s
-[contributors](https://github.com/knqyf263/pet/graphs/contributors) — this is
-a Rust port of their tool.
+Originally inspired by [Teppei Fukuda (knqyf263)](https://github.com/knqyf263)'s
+[`pet`](https://github.com/knqyf263/pet).
