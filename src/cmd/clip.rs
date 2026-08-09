@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Stream::Stdout};
 
 use crate::config::Config;
 use crate::dialog;
@@ -12,6 +12,7 @@ pub struct ClipOptions {
     pub delimiter: String,
     pub raw: bool,
     pub show_command: bool,
+    pub color: bool,
 }
 
 pub fn run(config: &Config, opts: ClipOptions) -> Result<()> {
@@ -22,6 +23,7 @@ pub fn run(config: &Config, opts: ClipOptions) -> Result<()> {
 
     let select_opts = SelectOptions {
         query: opts.query.clone(),
+        color: opts.color,
     };
     let mut commands =
         selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;
@@ -43,7 +45,10 @@ pub fn run(config: &Config, opts: ClipOptions) -> Result<()> {
     let command = commands.join(&opts.delimiter);
 
     if opts.show_command && !command.is_empty() {
-        println!("{} {command}", "Command:".bright_yellow());
+        println!(
+            "{} {command}",
+            "Command:".if_supports_color(Stdout, |t| t.bright_yellow())
+        );
     }
 
     let mut clipboard = arboard::Clipboard::new().context("failed to access clipboard")?;

@@ -12,6 +12,10 @@ use crate::snippet::SnippetInfo;
 #[derive(Debug, Clone, Default)]
 pub struct SelectOptions {
     pub query: Option<String>,
+    /// Force-color the description/tags in the text sent to the selector (e.g.
+    /// fzf's `--ansi`), regardless of the `color` config — mirrors Go pet's
+    /// per-command `--color` flag, which ORs with `general.color`.
+    pub color: bool,
 }
 
 /// Format every snippet via `general.format`, run the result through the configured
@@ -22,14 +26,20 @@ pub fn select_commands(
     snippets: &[SnippetInfo],
     opts: &SelectOptions,
 ) -> Result<Vec<String>> {
+    let color = general.color || opts.color;
     let mut lookup: HashMap<String, String> = HashMap::new();
     let mut items = Vec::with_capacity(snippets.len());
 
     for s in snippets {
-        let text = render_template(&general.format, &s.description, &s.command, &s.tag);
+        let text = render_template(&general.format, &s.description, &s.command, &s.tag, color);
         items.push(text.clone());
         // Last-write-wins on duplicate display text, matching Go pet's own
         // map[string]SnippetInfo lookup (built from the identical formatted text).
+        // Unlike Go, we key the lookup off the *same* (possibly colored) text
+        // that's actually sent to the selector — Go's version builds the map key
+        // from the uncolored text but sends the colored text to fzf, so a
+        // selection made while `color` is enabled can fail to map back to its
+        // snippet there.
         lookup.insert(text, s.command.clone());
     }
 
@@ -170,6 +180,51 @@ mod tests {
         }];
 
         let result = select_commands(&general, &snippets, &SelectOptions::default()).unwrap();
+        assert_eq!(result, vec!["echo hi".to_string()]);
+    }
+
+    #[test]
+    fn select_commands_with_color_still_maps_back_correctly() {
+        // The colored display text (sent to `cat`, our stand-in selector) must be
+        // the same text used as the lookup key, or the selection can't be mapped
+        // back to its command — see the doc comment on the `color` field.
+        let general = GeneralConfig {
+            selectcmd: "cat".to_string(),
+            color: true,
+            ..GeneralConfig::default()
+        };
+        let snippets = vec![SnippetInfo {
+            filename: Default::default(),
+            description: "greet".to_string(),
+            command: "echo hi".to_string(),
+            tag: vec!["demo".to_string()],
+            output: String::new(),
+        }];
+
+        let result = select_commands(&general, &snippets, &SelectOptions::default()).unwrap();
+        assert_eq!(result, vec!["echo hi".to_string()]);
+    }
+
+    #[test]
+    fn select_commands_per_command_color_flag_ors_with_general_color() {
+        let general = GeneralConfig {
+            selectcmd: "cat".to_string(),
+            color: false,
+            ..GeneralConfig::default()
+        };
+        let snippets = vec![SnippetInfo {
+            filename: Default::default(),
+            description: "greet".to_string(),
+            command: "echo hi".to_string(),
+            tag: vec![],
+            output: String::new(),
+        }];
+
+        let opts = SelectOptions {
+            color: true,
+            ..SelectOptions::default()
+        };
+        let result = select_commands(&general, &snippets, &opts).unwrap();
         assert_eq!(result, vec!["echo hi".to_string()]);
     }
 

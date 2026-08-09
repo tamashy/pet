@@ -1,5 +1,5 @@
 use anyhow::Result;
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Stream::Stdout};
 
 use crate::config::Config;
 use crate::format::truncate_pad;
@@ -25,36 +25,56 @@ pub fn run(config: &Config, oneline: bool, tags: Option<&str>, debug: bool) -> R
             let command = s.command.replace('\n', "\\n");
             println!(
                 "{} : {}",
-                description.bright_green(),
-                command.bright_yellow()
+                description.if_supports_color(Stdout, |t| t.bright_green()),
+                command.if_supports_color(Stdout, |t| t.bright_yellow())
             );
             continue;
         }
 
         if debug {
             let label = format!("{:>12}", "Filename:");
-            println!("{} {}", label.red(), s.filename.display());
+            println!(
+                "{} {}",
+                label.if_supports_color(Stdout, |t| t.red()),
+                s.filename.display()
+            );
         }
 
         let label = format!("{:>12}", "Description:");
-        println!("{} {}", label.bright_green(), s.description);
+        println!(
+            "{} {}",
+            label.if_supports_color(Stdout, |t| t.bright_green()),
+            s.description
+        );
 
         let mut lines = s.command.split('\n');
         let label = format!("{:>12}", "Command:");
-        println!("{} {}", label.bright_yellow(), lines.next().unwrap_or(""));
+        println!(
+            "{} {}",
+            label.if_supports_color(Stdout, |t| t.bright_yellow()),
+            lines.next().unwrap_or("")
+        );
         for line in lines {
             println!("{:>12} {}", "", line);
         }
 
         if !s.tag.is_empty() {
             let label = format!("{:>12}", "Tag:");
-            println!("{} {}", label.bright_cyan(), s.tag.join(" "));
+            println!(
+                "{} {}",
+                label.if_supports_color(Stdout, |t| t.bright_cyan()),
+                s.tag.join(" ")
+            );
         }
 
         if !s.output.is_empty() {
             let output = s.output.replace('\n', "\n             ");
             let label = format!("{:>12}", "Output:");
-            println!("{} {}", label.bright_red(), output);
+            println!(
+                "{} {}",
+                label.if_supports_color(Stdout, |t| t.bright_red()),
+                output
+            );
         }
 
         println!("{}", "-".repeat(30));

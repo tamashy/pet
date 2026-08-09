@@ -10,6 +10,7 @@ pub struct ExecOptions {
     pub query: Option<String>,
     pub tag: Option<String>,
     pub silent: bool,
+    pub color: bool,
 }
 
 pub fn run(config: &Config, opts: ExecOptions) -> Result<()> {
@@ -20,6 +21,7 @@ pub fn run(config: &Config, opts: ExecOptions) -> Result<()> {
 
     let select_opts = SelectOptions {
         query: opts.query.clone(),
+        color: opts.color,
     };
     let mut commands =
         selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;
