@@ -3,10 +3,11 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use dialoguer::Input;
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Stream::Stdout};
 
 use crate::config::Config;
 use crate::editor;
+use crate::error::SnippetError;
 use crate::path::expand_absolute;
 use crate::snippet::{SnippetInfo, Snippets};
 
@@ -38,7 +39,10 @@ pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
 
     let command = if !opts.command_args.is_empty() {
         let command = opts.command_args.join(" ");
-        println!("{} {}", "Command>".bright_yellow(), command);
+        println!(
+            "{} {command}",
+            "Command>".if_supports_color(Stdout, |t| t.bright_yellow())
+        );
         command
     } else if opts.multiline {
         scan_multiline()?
@@ -64,7 +68,7 @@ pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
         .iter()
         .any(|s| s.description == description)
     {
-        bail!("snippet [{description}] already exists");
+        return Err(SnippetError::DuplicateDescription(description).into());
     }
 
     snippets.snippets.push(SnippetInfo {
@@ -170,7 +174,10 @@ fn scan_multiline() -> Result<String> {
     let mut multiline = String::new();
     let mut state = MultilineState::Start;
 
-    print!("{} ", "Command>".bright_yellow());
+    print!(
+        "{} ",
+        "Command>".if_supports_color(Stdout, |t| t.bright_yellow())
+    );
     io::stdout().flush()?;
 
     loop {
@@ -185,7 +192,10 @@ fn scan_multiline() -> Result<String> {
             MultilineStep::Done => return Ok(multiline),
             MultilineStep::Continue(next) => {
                 if state == MultilineState::Start && next == MultilineState::LastLineNotEmpty {
-                    print!("{} ", "......>".bright_yellow());
+                    print!(
+                        "{} ",
+                        "......>".if_supports_color(Stdout, |t| t.bright_yellow())
+                    );
                     io::stdout().flush()?;
                 }
                 state = next;

@@ -1,12 +1,35 @@
 /// Render the `format` config template ("[$description]: $command $tags") for a
 /// single snippet, used to build the searchable text handed to the selector.
 /// Multiline commands are flattened to a literal `\n` so each snippet stays one line.
-pub fn render_template(format: &str, description: &str, command: &str, tags: &[String]) -> String {
+///
+/// `color`, when true, wraps `$description`/`$tags` in ANSI color codes
+/// unconditionally (no TTY check — this text is piped to the selector, e.g. fzf's
+/// `--ansi`, not printed directly), matching Go pet's `general.color`/`--color`:
+/// force-coloring the text fed to the selector so it renders in color there even
+/// though the pipe itself isn't a terminal.
+pub fn render_template(
+    format: &str,
+    description: &str,
+    command: &str,
+    tags: &[String],
+    color: bool,
+) -> String {
+    use owo_colors::OwoColorize;
+
     let flattened_command = command.replace('\n', "\\n");
     let tags_str = tags.iter().map(|t| format!("#{t} ")).collect::<String>();
 
+    let (description, tags_str) = if color {
+        (
+            description.bright_red().to_string(),
+            tags_str.bright_cyan().to_string(),
+        )
+    } else {
+        (description.to_string(), tags_str)
+    };
+
     format
-        .replacen("$description", description, 1)
+        .replacen("$description", &description, 1)
         .replacen("$command", &flattened_command, 1)
         .replacen("$tags", &tags_str, 1)
 }
@@ -39,8 +62,27 @@ mod tests {
 
     #[test]
     fn render_template_substitutes_all_placeholders() {
-        let out = render_template("[$description]: $command $tags", "d", "c", &[]);
+        let out = render_template("[$description]: $command $tags", "d", "c", &[], false);
         assert_eq!(out, "[d]: c ");
+    }
+
+    #[test]
+    fn render_template_color_wraps_description_and_tags_only() {
+        use owo_colors::OwoColorize;
+
+        let out = render_template(
+            "[$description]: $command $tags",
+            "d",
+            "c",
+            &["t".to_string()],
+            true,
+        );
+        // Command stays plain; description/tags get ANSI codes unconditionally
+        // (this text is piped to the selector, not printed to our own stdout, so
+        // there's no TTY to detect — compare against the same coloring calls
+        // rather than hardcoding owo-colors' exact SGR sequences).
+        let expected = format!("[{}]: c {}", "d".bright_red(), "#t ".bright_cyan());
+        assert_eq!(out, expected);
     }
 
     #[test]

@@ -7,13 +7,20 @@ fn renders_default_template() {
         "greet",
         "echo hi",
         &["demo".to_string(), "sample".to_string()],
+        false,
     );
     assert_eq!(out, "[greet]: echo hi #demo #sample ");
 }
 
 #[test]
 fn renders_template_with_no_tags() {
-    let out = render_template("[$description]: $command $tags", "greet", "echo hi", &[]);
+    let out = render_template(
+        "[$description]: $command $tags",
+        "greet",
+        "echo hi",
+        &[],
+        false,
+    );
     assert_eq!(out, "[greet]: echo hi ");
 }
 
@@ -24,6 +31,7 @@ fn flattens_multiline_commands_to_literal_backslash_n() {
         "multi",
         "echo one\necho two",
         &[],
+        false,
     );
     assert_eq!(out, "[multi]: echo one\\necho two ");
 }

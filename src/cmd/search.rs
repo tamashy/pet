@@ -12,6 +12,7 @@ pub struct SearchOptions {
     pub tag: Option<String>,
     pub delimiter: String,
     pub raw: bool,
+    pub color: bool,
 }
 
 pub fn run(config: &Config, opts: SearchOptions) -> Result<()> {
@@ -22,6 +23,7 @@ pub fn run(config: &Config, opts: SearchOptions) -> Result<()> {
 
     let select_opts = SelectOptions {
         query: opts.query.clone(),
+        color: opts.color,
     };
     let mut commands =
         selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;

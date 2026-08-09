@@ -54,6 +54,7 @@ fn run() -> Result<()> {
             query,
             tag,
             delimiter,
+            color,
         } => {
             cmd::search::run(
                 &cfg,
@@ -62,11 +63,25 @@ fn run() -> Result<()> {
                     tag,
                     delimiter,
                     raw,
+                    color,
                 },
             )?;
         }
-        Commands::Exec { query, tag, silent } => {
-            cmd::exec::run(&cfg, cmd::exec::ExecOptions { query, tag, silent })?;
+        Commands::Exec {
+            query,
+            tag,
+            silent,
+            color,
+        } => {
+            cmd::exec::run(
+                &cfg,
+                cmd::exec::ExecOptions {
+                    query,
+                    tag,
+                    silent,
+                    color,
+                },
+            )?;
         }
         Commands::Clip {
             raw,
@@ -74,6 +89,7 @@ fn run() -> Result<()> {
             tag,
             delimiter,
             show_command,
+            color,
         } => {
             cmd::clip::run(
                 &cfg,
@@ -83,6 +99,7 @@ fn run() -> Result<()> {
                     delimiter,
                     raw,
                     show_command,
+                    color,
                 },
             )?;
         }

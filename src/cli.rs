@@ -74,6 +74,10 @@ pub enum Commands {
         /// Use delim as the command delimiter character
         #[arg(short = 'd', long = "delimiter", default_value = "; ")]
         delimiter: String,
+
+        /// Enable colorized output (only fzf)
+        #[arg(long)]
+        color: bool,
     },
     /// Run the selected commands directly
     Exec {
@@ -88,6 +92,10 @@ pub enum Commands {
         /// Suppress the command output
         #[arg(short = 's', long = "silent")]
         silent: bool,
+
+        /// Enable colorized output (only fzf)
+        #[arg(long)]
+        color: bool,
     },
     /// Copy the selected commands to clipboard
     Clip {
@@ -110,6 +118,10 @@ pub enum Commands {
         /// Print the command before copying it to the clipboard
         #[arg(long = "command")]
         show_command: bool,
+
+        /// Enable colorized output (only fzf)
+        #[arg(long)]
+        color: bool,
     },
     /// Print the version number
     Version,

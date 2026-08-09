@@ -140,6 +140,8 @@ pet exec -s                   # ...without echoing "> command" first
 
 pet clip                      # copy the selected command to the clipboard
 pet clip --command             # ...and print what was copied
+
+pet search --color             # colorize description/tags in the fzf list (needs --ansi in selectcmd, on by default)
 ```
 
 If exactly one snippet is selected (not `--raw`) and its command contains a
@@ -192,6 +194,7 @@ directly with `--config`. It's created for you on first run.
   sortby = ""                      # recency (default) | -recency | description | -description | command | -command | output | -output
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
   format = "[$description]: $command $tags"   # how snippets are displayed to the selector
+  color = false                    # force-colorize description/tags in the selector list, same as --color
 ```
 
 Snippets are plain TOML (`pet edit` to open it directly):

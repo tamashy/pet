@@ -21,8 +21,11 @@ pub fn run(config: &Config, opts: EditOptions) -> Result<()> {
         if let Some(tag) = &opts.tag {
             snippets.snippets = snippets.filter_by_single_tag(tag);
         }
+        // No --color here: Go pet's selectFile (edit's file picker) never colors
+        // its display text either.
         let select_opts = SelectOptions {
             query: opts.query.clone(),
+            color: false,
         };
         match selector::select_file(&config.general, &snippets.snippets, &select_opts)? {
             Some(path) => path,
