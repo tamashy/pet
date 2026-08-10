@@ -139,4 +139,9 @@ pub enum Commands {
     },
     /// Print the version number
     Version,
+    /// Print a shell completion script to stdout
+    Completions {
+        /// Which shell to generate completions for
+        shell: clap_complete::Shell,
+    },
 }

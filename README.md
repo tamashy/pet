@@ -66,6 +66,22 @@ shell out to an external fuzzy-finder for interactive selection — by default
 [`fzf`](https://github.com/junegunn/fzf). Install it, or point the `selectcmd`
 config option (see below) at something else, e.g. `peco`.
 
+### Shell completions
+
+`pet completions <shell>` prints a completion script for `bash`, `zsh`,
+`fish`, `elvish`, or `powershell` — install it the way your shell expects:
+
+```bash
+# bash
+pet completions bash > /usr/local/etc/bash_completion.d/pet   # or wherever your bashrc sources completions from
+
+# zsh (anywhere on $fpath, then start a new shell)
+pet completions zsh > "${fpath[1]}/_pet"
+
+# fish
+pet completions fish > ~/.config/fish/completions/pet.fish
+```
+
 ## Quick start
 
 ```bash
@@ -97,6 +113,7 @@ Commands:
   exec        Run the selected commands
   clip        Copy the selected commands to clipboard
   version     Print the version number
+  completions Print a shell completion script
 
 Flags:
       --config <path>   config file (default $HOME/.config/pet/config.toml)

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use pet::cli::{Cli, Commands};
 use pet::cmd;
@@ -16,6 +16,16 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+
+    // Doesn't touch config/snippets at all, so generate it before the config
+    // directory gets created below — completions should work in a fresh
+    // environment (e.g. a package install script) with no config yet.
+    if let Commands::Completions { shell } = cli.command {
+        let mut command = Cli::command();
+        let name = command.get_name().to_string();
+        clap_complete::generate(shell, &mut command, name, &mut std::io::stdout());
+        return Ok(());
+    }
 
     let config_path = match &cli.config {
         Some(path) => PathBuf::from(path),
@@ -109,6 +119,7 @@ fn run() -> Result<()> {
         Commands::Version => {
             cmd::version::run();
         }
+        Commands::Completions { .. } => unreachable!("handled above, before config is loaded"),
     }
 
     Ok(())
