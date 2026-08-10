@@ -38,7 +38,8 @@ Not yet implemented: syncing snippets via Gist/GitLab/GHE.
 
 ### Download a release binary
 
-Prebuilt binaries for macOS (Apple Silicon and Intel) and Linux (x86_64) are
+Prebuilt binaries for macOS (Apple Silicon and Intel) and Linux (x86_64,
+statically linked against musl — runs on any distro/glibc version) are
 published on the [Releases page](https://github.com/tamashy/pet/releases).
 Download the archive for your platform, extract it, and put `pet` somewhere
 on your `$PATH`:
@@ -159,7 +160,7 @@ pet search --color             # force description/tags coloring in the fzf list
 
 If exactly one snippet is selected (not `--raw`) and its command contains a
 `<param>`-style placeholder, an interactive form opens to fill it in before
-the command is used — see [Parameters](#parameters).
+the command is used - see [Parameters](#parameters).
 
 ### `pet edit`
 
@@ -183,9 +184,9 @@ Snippets can contain placeholders that get filled in interactively:
 command = "ssh <user=admin>@<host>"
 ```
 
-- `<name>` — a required value, no default
-- `<name=default>` — pre-filled with `default`, editable
-- `<name=|_option_a_||_option_b_|>` — cycle through fixed options with ↑/↓
+- `<name>` - a required value, no default
+- `<name=default>` - pre-filled with `default`, editable
+- `<name=|_option_a_||_option_b_|>` - cycle through fixed options with ↑/↓
 
 In the dialog: type to edit the focused field, `Tab`/`Shift-Tab` to switch
 fields, `Enter` to confirm the current values, `Esc`/`Ctrl-C` to cancel
