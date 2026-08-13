@@ -108,9 +108,11 @@ fn load_creates_default_config_and_empty_snippet_file_when_missing() {
     assert_eq!(cfg.general.column, 40);
     assert_eq!(cfg.gist.file_name, "pet-snippet.toml");
     assert_eq!(cfg.gitlab.visibility, "private");
-    // Fresh installs get color on by default; see GeneralConfig::default's doc
-    // comment for why this is distinct from the `color` field's own serde default.
+    // Fresh installs get color on and the native picker selected by default; see
+    // GeneralConfig::default's doc comments for why these differ from the fields'
+    // own serde defaults (which stay Go-pet-compatible for configs missing the key).
     assert!(cfg.general.color);
+    assert_eq!(cfg.general.selectcmd, "builtin");
 
     // Loading again should read back the same config, not re-create it.
     let reloaded = Config::load(&config_path).expect("reload existing config");

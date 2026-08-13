@@ -6,6 +6,8 @@ pub mod editor;
 pub mod error;
 pub mod format;
 pub mod path;
+pub(crate) mod picker;
 pub mod selector;
 pub mod shell;
 pub mod snippet;
+pub(crate) mod tui;

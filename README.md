@@ -18,6 +18,7 @@ search — without digging through shell history or a notes file.
 
 ## Features
 
+- Fuzzy-select snippets with a built-in picker — no external tool required
 - Save command snippets with a description and tags (`pet new`)
 - Fuzzy-search and run them without retyping (`pet exec`)
 - Fuzzy-search and print them, e.g. to pipe into your shell history
@@ -61,10 +62,30 @@ cargo install --path .
 
 ### A selector
 
-`pet search`/`exec`/`clip`/`edit` (when using multiple snippet directories)
-shell out to an external fuzzy-finder for interactive selection — by default
-[`fzf`](https://github.com/junegunn/fzf). Install it, or point the `selectcmd`
-config option (see below) at something else, e.g. `peco`.
+`pet search`/`exec`/`clip`/`delete`/`edit` (when using multiple snippet
+directories) use a fuzzy-finder for interactive selection. By default that's
+a picker built into `pet` itself — nothing else to install. If you'd rather
+use [`fzf`](https://github.com/junegunn/fzf), `peco`, or something else, point
+the `selectcmd` config option (see below) at it instead.
+
+### The built-in picker
+
+When `selectcmd` is `builtin` (the default for new configs), selection opens
+a full-screen fuzzy finder:
+
+- Type to filter — matches are scored and sorted like `fzf`'s, with matched
+  characters highlighted
+- `↑`/`↓` move focus, wrapping at either end
+- `Tab` toggles the focused snippet for multi-select and advances
+- `Enter` confirms — whatever's toggled, or just the focused snippet if
+  nothing's been toggled
+- `Esc`/`Ctrl-C` cancels (nothing gets selected)
+
+`-q`/`--query` still pre-fills the picker's own query box, and `general.format`
+still controls what each line shows, same as with an external selector. `color`
+doesn't apply, though — the built-in picker always renders in color, using its
+own native styling rather than embedding ANSI codes in the text like an
+external `selectcmd` needs.
 
 ### Shell completions
 
@@ -92,7 +113,7 @@ Description> Compress a directory
 
 # Find it again and run it
 $ pet exec
-# ...fzf opens, you pick the snippet, then fill in archive/dir if you like the defaults or not...
+# ...the picker opens, you pick the snippet, then fill in archive/dir if you like the defaults or not...
 
 # Just print it instead of running it (e.g. to inspect it, or pipe elsewhere)
 $ pet search --raw
@@ -152,7 +173,7 @@ Fuzzy-select one or more snippets and delete them. Hand-editing the TOML file
 ```bash
 pet delete                    # pick one or more snippets to remove
 pet delete -t net              # only offer snippets tagged "net"
-pet delete -q "docker"         # pre-fill the fzf query
+pet delete -q "docker"         # pre-fill the picker's query
 ```
 
 ### `pet search` / `pet exec` / `pet clip`
@@ -163,7 +184,7 @@ result.
 ```bash
 pet search                    # print the selected command
 pet search --raw              # skip the parameter dialog even if it has one
-pet search -q "docker"        # pre-fill the fzf query (still fzf's own live-editable filter)
+pet search -q "docker"        # pre-fill the picker's query (still its own live-editable filter)
 pet search -t net              # only search snippets tagged "net"
 pet search -f docker           # only offer snippets whose description or command contains "docker" — narrows the list itself, combines with -t
 pet search -d $'\n'            # join multi-selected commands with this instead of "; "
@@ -174,7 +195,7 @@ pet exec -s                   # ...without echoing "> command" first
 pet clip                      # copy the selected command to the clipboard
 pet clip --command             # ...and print what was copied
 
-pet search --color             # force description/tags coloring in the fzf list even if config.toml disables it (needs --ansi in selectcmd, on by default)
+pet search --color             # with an external selectcmd, force description/tags coloring even if config.toml disables it (needs --ansi in a fzf-style selectcmd; no effect on the built-in picker, which always colorizes)
 ```
 
 If exactly one snippet is selected (not `--raw`) and its command contains a
@@ -223,7 +244,7 @@ directly with `--config`. It's created for you on first run.
   snippetdirs = []                 # extra directories of *.toml snippet files
   editor = "vim"
   column = 40                      # truncation width for `list --oneline`
-  selectcmd = "fzf --ansi --layout=reverse --border --height=90% --pointer=* --cycle --prompt=Snippets:"
+  selectcmd = "builtin"            # "builtin" for the native picker (default for new configs), or an external command, e.g. "fzf --ansi --layout=reverse --border --height=90% --pointer=* --cycle --prompt=Snippets:"
   sortby = ""                      # recency (default) | -recency | description | -description | command | -command | output | -output
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
   format = "[$description]: $command $tags"   # how snippets are displayed to the selector
@@ -242,7 +263,9 @@ Snippets are plain TOML (`pet edit` to open it directly):
 ## Shell integration
 
 Bind a key to search your snippets and drop the result on your command line,
-so it lands in shell history too:
+so it lands in shell history too. This captures `pet search`'s stdout via
+`$(...)`; the built-in picker draws itself to the terminal directly rather
+than through stdout, so it still shows up correctly here.
 
 **bash** (`.bashrc`)
 ```bash

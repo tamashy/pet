@@ -62,7 +62,13 @@ impl Default for GeneralConfig {
             snippetdirs: Vec::new(),
             editor: String::new(),
             column: default_column(),
-            selectcmd: default_selectcmd(),
+            // Same reasoning as `color` below: only the value baked into freshly-
+            // generated config.toml files. The field's own `#[serde(default)]`
+            // stays the fzf invocation, so a config.toml missing the key entirely
+            // still behaves exactly like it always did. "builtin" is `selector`'s
+            // sentinel for the native picker in picker.rs — no external tool
+            // required for a brand-new install.
+            selectcmd: crate::selector::BUILTIN_SELECTCMD.to_string(),
             backend: default_backend(),
             sortby: String::new(),
             cmd: default_cmd(),
