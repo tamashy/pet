@@ -73,8 +73,10 @@ the `selectcmd` config option (see below) at it instead.
 When `selectcmd` is `builtin` (the default for new configs), selection opens
 a full-screen fuzzy finder:
 
-- Type to filter — matches are scored and sorted like `fzf`'s, with matched
-  characters highlighted
+- Description, command, and tags are colored distinctly (green/yellow/cyan)
+  in every row, and matched characters are bolded and underlined on top of
+  that as you type
+- Type to filter — matches are scored and sorted like `fzf`'s
 - `↑`/`↓` move focus, wrapping at either end
 - `Tab` toggles the focused snippet for multi-select and advances
 - `Enter` confirms — whatever's toggled, or just the focused snippet if
