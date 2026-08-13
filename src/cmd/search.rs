@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::dialog;
 use crate::selector::{self, SelectOptions};
 use crate::snippet::Snippets;
+use crate::usage;
 
 pub struct SearchOptions {
     pub query: Option<String>,
@@ -29,12 +30,13 @@ pub fn run(config: &Config, opts: SearchOptions) -> Result<()> {
         query: opts.query.clone(),
         color: opts.color,
     };
-    let mut commands =
-        selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;
+    let selected = selector::select_snippets(&config.general, &snippets.snippets, &select_opts)?;
 
-    if commands.is_empty() {
+    if selected.is_empty() {
         return Ok(());
     }
+
+    let mut commands: Vec<String> = selected.iter().map(|s| s.command.clone()).collect();
 
     // Parameter substitution only kicks in for a single selected snippet, matching
     // Go pet's cmd/util.go `filter()` exactly: a multi-select or --raw always
@@ -56,6 +58,10 @@ pub fn run(config: &Config, opts: SearchOptions) -> Result<()> {
     if io::stdout().is_terminal() {
         output.push('\n');
     }
+    usage::record_uses(
+        &config.general,
+        selected.iter().map(|s| s.description.as_str()),
+    )?;
     write_ignoring_broken_pipe(&output)
 }
 

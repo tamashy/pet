@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::GeneralConfig;
 use crate::error::SnippetError;
 use crate::path::{expand_absolute, files_in_dir};
+use crate::usage::{self, UsageStats};
 
 // Aliases accept the PascalCase keys pelletier/go-toml emits for untagged Go struct
 // fields (Description/Tag/Output have no `toml:"..."` tag in Go pet), so snippet
@@ -84,7 +85,8 @@ impl Snippets {
             snippets.snippets.extend(parsed.snippets);
         }
 
-        snippets.order(&general.sortby);
+        let usage_stats = UsageStats::load(&usage::file_path(general)?)?;
+        snippets.order(&general.sortby, &usage_stats);
         Ok(snippets)
     }
 
@@ -119,8 +121,11 @@ impl Snippets {
     }
 
     /// Sort snippets in place according to the `sortby` config value.
-    /// Supported: recency (default, no-op), -recency, [+-]description, [+-]command, [+-]output.
-    pub fn order(&mut self, sortby: &str) {
+    /// Supported: recency (default, no-op), -recency, [+-]description, [+-]command,
+    /// [+-]output, [+-]usage (most-invoked-and-most-recently-used first; -usage
+    /// reverses it). `usage` needs invocation stats recorded by `usage::record_uses`,
+    /// passed in via `usage_stats` (an unused snippet sorts as if never used).
+    pub fn order(&mut self, sortby: &str, usage_stats: &UsageStats) {
         match sortby {
             "command" | "+command" => self.snippets.sort_by(|a, b| b.command.cmp(&a.command)),
             "-command" => self.snippets.sort_by(|a, b| a.command.cmp(&b.command)),
@@ -132,6 +137,16 @@ impl Snippets {
                 .sort_by(|a, b| a.description.cmp(&b.description)),
             "output" | "+output" => self.snippets.sort_by(|a, b| b.output.cmp(&a.output)),
             "-output" => self.snippets.sort_by(|a, b| a.output.cmp(&b.output)),
+            "usage" | "+usage" => self.snippets.sort_by(|a, b| {
+                usage_stats
+                    .score(&b.description)
+                    .cmp(&usage_stats.score(&a.description))
+            }),
+            "-usage" => self.snippets.sort_by(|a, b| {
+                usage_stats
+                    .score(&a.description)
+                    .cmp(&usage_stats.score(&b.description))
+            }),
             "-recency" => self.snippets.reverse(),
             _ => {}
         }
@@ -192,7 +207,7 @@ mod tests {
     #[test]
     fn order_on_empty_snippets_does_not_panic() {
         let mut snippets = Snippets::default();
-        snippets.order("description");
+        snippets.order("description", &UsageStats::default());
         assert!(snippets.snippets.is_empty());
     }
 
@@ -201,7 +216,7 @@ mod tests {
         let mut snippets = Snippets {
             snippets: vec![snippet("b"), snippet("a"), snippet("c")],
         };
-        snippets.order("not-a-real-sortby");
+        snippets.order("not-a-real-sortby", &UsageStats::default());
         let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
         assert_eq!(descs, vec!["b", "a", "c"]);
     }
@@ -211,9 +226,30 @@ mod tests {
         let mut snippets = Snippets {
             snippets: vec![snippet("first"), snippet("second")],
         };
-        snippets.order("");
+        snippets.order("", &UsageStats::default());
         let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
         assert_eq!(descs, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn order_usage_sorts_most_used_first() {
+        // last_used has only second resolution, so don't assert a tie-break order
+        // between snippets used within the same second — just count-based ranking.
+        let mut usage_stats = UsageStats::default();
+        usage_stats.record("a"); // count 1
+        usage_stats.record("c");
+        usage_stats.record("c"); // count 2, most used overall
+
+        let mut snippets = Snippets {
+            snippets: vec![snippet("a"), snippet("c"), snippet("unused")],
+        };
+        snippets.order("usage", &usage_stats);
+        let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
+        assert_eq!(descs, vec!["c", "a", "unused"]);
+
+        snippets.order("-usage", &usage_stats);
+        let descs: Vec<_> = snippets.snippets.iter().map(|s| &s.description).collect();
+        assert_eq!(descs, vec!["unused", "a", "c"]);
     }
 
     #[test]

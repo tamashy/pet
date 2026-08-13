@@ -7,6 +7,7 @@ use owo_colors::{OwoColorize, Stream::Stdout};
 use crate::config::Config;
 use crate::selector::{self, SelectOptions};
 use crate::snippet::Snippets;
+use crate::usage;
 
 pub struct DeleteOptions {
     pub query: Option<String>,
@@ -33,6 +34,10 @@ pub fn run(config: &Config, opts: DeleteOptions) -> Result<()> {
     let touched_files: HashSet<PathBuf> = selected.iter().map(|s| s.filename.clone()).collect();
     all.snippets.retain(|s| !selected.contains(s));
     all.save(&config.general)?;
+    usage::remove_uses(
+        &config.general,
+        selected.iter().map(|s| s.description.as_str()),
+    )?;
 
     // Snippets::save only rewrites files that still have at least one snippet in
     // them — if a delete emptied a file out entirely, it never appears in that
