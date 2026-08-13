@@ -5,6 +5,7 @@ use crate::dialog;
 use crate::selector::{self, SelectOptions};
 use crate::shell;
 use crate::snippet::Snippets;
+use crate::usage;
 
 pub struct ExecOptions {
     pub query: Option<String>,
@@ -23,12 +24,13 @@ pub fn run(config: &Config, opts: ExecOptions) -> Result<()> {
         query: opts.query.clone(),
         color: opts.color,
     };
-    let mut commands =
-        selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;
+    let selected = selector::select_snippets(&config.general, &snippets.snippets, &select_opts)?;
 
-    if commands.is_empty() {
+    if selected.is_empty() {
         return Ok(());
     }
+
+    let mut commands: Vec<String> = selected.iter().map(|s| s.command.clone()).collect();
 
     // exec always attempts substitution (Go pet hardcodes raw=false here), still
     // gated to a single selection with actual params — see cmd::search.
@@ -48,6 +50,10 @@ pub fn run(config: &Config, opts: ExecOptions) -> Result<()> {
     }
 
     let status = shell::spawn_inherit(&config.general, &command)?;
+    usage::record_uses(
+        &config.general,
+        selected.iter().map(|s| s.description.as_str()),
+    )?;
     if !status.success() {
         bail!("command exited with {status}");
     }

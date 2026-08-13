@@ -1,5 +1,6 @@
 use pet::config::GeneralConfig;
 use pet::snippet::Snippets;
+use pet::usage::UsageStats;
 
 fn general_for(snippetfile: &std::path::Path, snippetdirs: Vec<String>) -> GeneralConfig {
     GeneralConfig {
@@ -122,30 +123,32 @@ fn order_sorts_by_each_sortby_value() {
         ],
     };
 
-    snippets.order("description");
+    let usage_stats = UsageStats::default();
+
+    snippets.order("description", &usage_stats);
     assert_eq!(descs(&snippets), vec!["c desc", "b desc", "a desc"]);
 
-    snippets.order("-description");
+    snippets.order("-description", &usage_stats);
     assert_eq!(descs(&snippets), vec!["a desc", "b desc", "c desc"]);
 
     let mut by_command = snippets.clone();
-    by_command.order("command");
+    by_command.order("command", &usage_stats);
     assert_eq!(cmds(&by_command), vec!["c cmd", "b cmd", "a cmd"]);
 
     let mut by_output = snippets.clone();
-    by_output.order("output");
+    by_output.order("output", &usage_stats);
     assert_eq!(outs(&by_output), vec!["c out", "b out", "a out"]);
 
     let original_order = descs(&snippets);
     let mut reversed = snippets.clone();
-    reversed.order("-recency");
+    reversed.order("-recency", &usage_stats);
     assert_eq!(
         descs(&reversed),
         original_order.into_iter().rev().collect::<Vec<_>>()
     );
 
     let mut untouched = snippets.clone();
-    untouched.order("");
+    untouched.order("", &usage_stats);
     assert_eq!(descs(&untouched), descs(&snippets));
 
     fn make(desc: &str, cmd: &str, out: &str) -> pet::snippet::SnippetInfo {

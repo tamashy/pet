@@ -247,11 +247,16 @@ directly with `--config`. It's created for you on first run.
   editor = "vim"
   column = 40                      # truncation width for `list --oneline`
   selectcmd = "builtin"            # "builtin" for the native picker (default for new configs), or an external command, e.g. "fzf --ansi --layout=reverse --border --height=90% --pointer=* --cycle --prompt=Snippets:"
-  sortby = ""                      # recency (default) | -recency | description | -description | command | -command | output | -output
+  sortby = ""                      # recency (default) | -recency | description | -description | command | -command | output | -output | usage | -usage
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
   format = "[$description]: $command $tags"   # how snippets are displayed to the selector
   color = true                     # colorize description/tags in the selector list, same as --color (default: true for new configs; set false to disable)
 ```
+
+`usage`/`-usage` sort by how often a snippet has been picked via `search`/`exec`/`clip`
+(most-used first for `usage`, least-used first for `-usage`, ties broken by most/least
+recently used). Invocation stats are tracked automatically in `usage.toml`, next to
+`snippetfile` — a local-only file, not part of the portable snippet list.
 
 Snippets are plain TOML (`pet edit` to open it directly):
 

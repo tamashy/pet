@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::dialog;
 use crate::selector::{self, SelectOptions};
 use crate::snippet::Snippets;
+use crate::usage;
 
 pub struct ClipOptions {
     pub query: Option<String>,
@@ -25,12 +26,13 @@ pub fn run(config: &Config, opts: ClipOptions) -> Result<()> {
         query: opts.query.clone(),
         color: opts.color,
     };
-    let mut commands =
-        selector::select_commands(&config.general, &snippets.snippets, &select_opts)?;
+    let selected = selector::select_snippets(&config.general, &snippets.snippets, &select_opts)?;
 
-    if commands.is_empty() {
+    if selected.is_empty() {
         return Ok(());
     }
+
+    let mut commands: Vec<String> = selected.iter().map(|s| s.command.clone()).collect();
 
     if !opts.raw && commands.len() == 1 {
         let params = dialog::extract_params(&commands[0]);
@@ -55,5 +57,9 @@ pub fn run(config: &Config, opts: ClipOptions) -> Result<()> {
     clipboard
         .set_text(command)
         .context("failed to copy command to clipboard")?;
+    usage::record_uses(
+        &config.general,
+        selected.iter().map(|s| s.description.as_str()),
+    )?;
     Ok(())
 }

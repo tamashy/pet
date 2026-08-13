@@ -355,18 +355,31 @@ fn render(frame: &mut ratatui::Frame, state: &PickerState) {
                 let focused = i == state.focus;
                 let selected = state.selected.contains(&m.index);
 
-                let marker = if selected { "» " } else { "  " };
-                let marker_color = if selected {
-                    Color::Green
-                } else {
-                    Color::DarkGray
-                };
-                let mut spans = vec![Span::styled(
-                    marker,
+                // Two independent one-char columns: a focus pointer (fzf-style
+                // ">", the thing this render was missing — the dim row
+                // background alone wasn't a strong enough cue) and a
+                // multi-select tick, so a row can show either, both, or
+                // neither without the two meanings fighting over one glyph.
+                let pointer = if focused { ">" } else { " " };
+                let pointer_style = if focused {
                     Style::default()
-                        .fg(marker_color)
-                        .add_modifier(Modifier::BOLD),
-                )];
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let tick = if selected { "»" } else { " " };
+                let tick_style = if selected {
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let mut spans = vec![
+                    Span::styled(pointer, pointer_style),
+                    Span::styled(tick, tick_style),
+                ];
 
                 for (ci, ch) in item.text.chars().enumerate() {
                     let mut style = Style::default().fg(field_color(&item.fields, ci));
@@ -666,5 +679,34 @@ mod tests {
         assert_eq!(fg_at(4), Color::LightGreen, "'g' starts the description");
         assert_eq!(fg_at(12), Color::LightYellow, "'e' starts the command");
         assert_eq!(fg_at(20), Color::LightCyan, "'#' starts the tags");
+    }
+
+    #[test]
+    fn render_shows_a_pointer_on_the_focused_row_and_a_tick_on_selected_rows() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        // Down moves focus to "b"; Tab selects "b" and advances focus to "c",
+        // so "b" ends up selected-but-not-focused and "c" focused-but-not-selected
+        // — the two indicators need to be independent, not just aliases of the
+        // same glyph.
+        let mut state = PickerState::new(items(&["a", "b", "c"]), "");
+        state = continuing(handle_key(state, KeyCode::Down, KeyModifiers::NONE));
+        state = continuing(handle_key(state, KeyCode::Tab, KeyModifiers::NONE));
+
+        let backend = TestBackend::new(70, 9);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, &state)).unwrap();
+        let buf = terminal.backend().buffer();
+
+        // List rows start at y=4 (3-row input box + list border); list border is
+        // at x=0, pointer column at x=1, tick column at x=2.
+        let cell = |x: u16, y: u16| buf[(x, y)].symbol().to_string();
+        assert_eq!(cell(1, 4), " ", "row 'a': neither focused nor selected");
+        assert_eq!(cell(2, 4), " ");
+        assert_eq!(cell(1, 5), " ", "row 'b': selected but not focused");
+        assert_eq!(cell(2, 5), "»");
+        assert_eq!(cell(1, 6), ">", "row 'c': focused but not selected");
+        assert_eq!(cell(2, 6), " ");
     }
 }

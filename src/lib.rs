@@ -11,3 +11,4 @@ pub mod selector;
 pub mod shell;
 pub mod snippet;
 pub(crate) mod tui;
+pub mod usage;
