@@ -50,8 +50,20 @@ fn run() -> Result<()> {
                 },
             )?;
         }
-        Commands::List { oneline, tags } => {
-            cmd::list::run(&cfg, oneline, tags.as_deref(), cli.debug)?;
+        Commands::List {
+            oneline,
+            tags,
+            filter,
+        } => {
+            cmd::list::run(
+                &cfg,
+                cmd::list::ListOptions {
+                    oneline,
+                    tags,
+                    filter,
+                    debug: cli.debug,
+                },
+            )?;
         }
         Commands::Configure => {
             cmd::configure::run(&cfg, &config_path)?;
@@ -66,6 +78,7 @@ fn run() -> Result<()> {
             raw,
             query,
             tag,
+            filter,
             delimiter,
             color,
         } => {
@@ -74,6 +87,7 @@ fn run() -> Result<()> {
                 cmd::search::SearchOptions {
                     query,
                     tag,
+                    filter,
                     delimiter,
                     raw,
                     color,

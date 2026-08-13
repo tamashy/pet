@@ -141,6 +141,7 @@ Print all snippets.
 pet list                      # full detail
 pet list --oneline            # one line per snippet
 pet list -t tag1,tag2         # only snippets tagged tag1 OR tag2
+pet list -f docker             # only snippets whose description or command contains "docker"
 ```
 
 ### `pet delete`
@@ -162,8 +163,9 @@ result.
 ```bash
 pet search                    # print the selected command
 pet search --raw              # skip the parameter dialog even if it has one
-pet search -q "docker"        # pre-fill the fzf query
+pet search -q "docker"        # pre-fill the fzf query (still fzf's own live-editable filter)
 pet search -t net              # only search snippets tagged "net"
+pet search -f docker           # only offer snippets whose description or command contains "docker" — narrows the list itself, combines with -t
 pet search -d $'\n'            # join multi-selected commands with this instead of "; "
 
 pet exec                      # run the selected command

@@ -5,12 +5,23 @@ use crate::config::Config;
 use crate::format::truncate_pad;
 use crate::snippet::Snippets;
 
-pub fn run(config: &Config, oneline: bool, tags: Option<&str>, debug: bool) -> Result<()> {
+pub struct ListOptions {
+    pub oneline: bool,
+    pub tags: Option<String>,
+    pub filter: Option<String>,
+    pub debug: bool,
+}
+
+pub fn run(config: &Config, opts: ListOptions) -> Result<()> {
     let mut snippets = Snippets::load(&config.general, true)?;
 
-    if let Some(tags) = tags {
+    if let Some(tags) = &opts.tags {
         let tag_list: Vec<String> = tags.split(',').map(|s| s.trim().to_string()).collect();
         snippets.snippets = snippets.filter_by_tags(&tag_list);
+    }
+
+    if let Some(filter) = &opts.filter {
+        snippets.snippets = snippets.filter_by_text(filter);
     }
 
     let col = if config.general.column <= 0 {
@@ -20,7 +31,7 @@ pub fn run(config: &Config, oneline: bool, tags: Option<&str>, debug: bool) -> R
     };
 
     for s in &snippets.snippets {
-        if oneline {
+        if opts.oneline {
             let description = truncate_pad(&s.description, col);
             let command = s.command.replace('\n', "\\n");
             println!(
@@ -31,7 +42,7 @@ pub fn run(config: &Config, oneline: bool, tags: Option<&str>, debug: bool) -> R
             continue;
         }
 
-        if debug {
+        if opts.debug {
             let label = format!("{:>12}", "Filename:");
             println!(
                 "{} {}",

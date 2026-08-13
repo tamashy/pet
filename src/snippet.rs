@@ -158,6 +158,21 @@ impl Snippets {
             .cloned()
             .collect()
     }
+
+    /// Keep only snippets whose description or command contains `needle`
+    /// (case-insensitive). Used by `list -f`/`search -f` to narrow a long
+    /// snippet list by content instead of only by tag.
+    pub fn filter_by_text(&self, needle: &str) -> Vec<SnippetInfo> {
+        let needle = needle.to_lowercase();
+        self.snippets
+            .iter()
+            .filter(|s| {
+                s.description.to_lowercase().contains(&needle)
+                    || s.command.to_lowercase().contains(&needle)
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -221,5 +236,30 @@ mod tests {
         let result = snippets.filter_by_single_tag("net");
         let descs: Vec<_> = result.iter().map(|s| s.description.as_str()).collect();
         assert_eq!(descs, vec!["a"]);
+    }
+
+    #[test]
+    fn filter_by_text_matches_description_or_command_case_insensitively() {
+        let mut by_description = snippet("Compress a Docker context");
+        by_description.command = "tar -czf out.tar.gz .".to_string();
+        let mut by_command = snippet("archive a directory");
+        by_command.command = "docker save -o out.tar my-image".to_string();
+        let no_match = snippet("ping a host");
+        let snippets = Snippets {
+            snippets: vec![by_description, by_command, no_match],
+        };
+
+        let result = snippets.filter_by_text("DOCKER");
+        let descs: Vec<_> = result.iter().map(|s| s.description.as_str()).collect();
+        assert_eq!(
+            descs,
+            vec!["Compress a Docker context", "archive a directory"]
+        );
+    }
+
+    #[test]
+    fn filter_by_text_on_empty_snippets_returns_empty() {
+        let snippets = Snippets::default();
+        assert!(snippets.filter_by_text("anything").is_empty());
     }
 }

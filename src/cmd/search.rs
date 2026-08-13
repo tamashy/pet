@@ -10,6 +10,7 @@ use crate::snippet::Snippets;
 pub struct SearchOptions {
     pub query: Option<String>,
     pub tag: Option<String>,
+    pub filter: Option<String>,
     pub delimiter: String,
     pub raw: bool,
     pub color: bool,
@@ -19,6 +20,9 @@ pub fn run(config: &Config, opts: SearchOptions) -> Result<()> {
     let mut snippets = Snippets::load(&config.general, true)?;
     if let Some(tag) = &opts.tag {
         snippets.snippets = snippets.filter_by_single_tag(tag);
+    }
+    if let Some(filter) = &opts.filter {
+        snippets.snippets = snippets.filter_by_text(filter);
     }
 
     let select_opts = SelectOptions {
