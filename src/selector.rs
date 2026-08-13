@@ -6,7 +6,8 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result};
 
 use crate::config::GeneralConfig;
-use crate::format::render_template;
+use crate::format::{render_template, render_template_fields};
+use crate::picker::{self, PickerItem};
 use crate::snippet::SnippetInfo;
 
 #[derive(Debug, Clone, Default)]
@@ -36,10 +37,25 @@ pub fn select_snippets(
     snippets: &[SnippetInfo],
     opts: &SelectOptions,
 ) -> Result<Vec<SnippetInfo>> {
-    // The picker renders natively via ratatui styling, not by shipping raw ANSI
-    // codes through a pipe for an external tool to interpret — embedding them in
-    // the display text here would just show up as literal escape-code garbage.
-    let color = !is_builtin(general) && (general.color || opts.color);
+    // The picker renders natively via ratatui styling — description/command/tags
+    // colored individually per field, using the same `render_template_fields`
+    // char ranges the external-selector path below ignores. This needs the field
+    // info from `render_template_fields` directly, so it's handled up here
+    // instead of inside the generic, selector-agnostic `run_selectcmd`.
+    if is_builtin(general) {
+        let items: Vec<PickerItem> = snippets
+            .iter()
+            .map(|s| {
+                let (text, fields) =
+                    render_template_fields(&general.format, &s.description, &s.command, &s.tag);
+                PickerItem { text, fields }
+            })
+            .collect();
+        let indices = picker::pick(&items, opts.query.as_deref())?;
+        return Ok(indices.into_iter().map(|i| snippets[i].clone()).collect());
+    }
+
+    let color = general.color || opts.color;
     let mut lookup: HashMap<String, SnippetInfo> = HashMap::new();
     let mut items = Vec::with_capacity(snippets.len());
 
@@ -92,6 +108,28 @@ pub fn select_file(
     snippets: &[SnippetInfo],
     opts: &SelectOptions,
 ) -> Result<Option<PathBuf>> {
+    if is_builtin(general) {
+        // Same shape as `select_snippets`'s default format, so it gets the same
+        // description/command/tags coloring for free.
+        let items: Vec<PickerItem> = snippets
+            .iter()
+            .map(|s| {
+                let (text, fields) = render_template_fields(
+                    "[$description]: $command $tags",
+                    &s.description,
+                    &s.command,
+                    &s.tag,
+                );
+                PickerItem { text, fields }
+            })
+            .collect();
+        let indices = picker::pick(&items, opts.query.as_deref())?;
+        return Ok(indices
+            .into_iter()
+            .next()
+            .map(|i| snippets[i].filename.clone()));
+    }
+
     let mut lookup: HashMap<String, PathBuf> = HashMap::new();
     let mut items = Vec::with_capacity(snippets.len());
 
@@ -124,11 +162,6 @@ fn run_selectcmd(
 ) -> Result<Vec<String>> {
     if items.is_empty() {
         return Ok(vec![]);
-    }
-
-    if is_builtin(general) {
-        let indices = crate::picker::pick(items, opts.query.as_deref())?;
-        return Ok(indices.into_iter().map(|i| items[i].clone()).collect());
     }
 
     let mut selectcmd = general.selectcmd.clone();

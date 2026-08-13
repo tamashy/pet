@@ -7,11 +7,23 @@
 //! `ratatui`+`crossterm` event loop (`pick`) that isn't.
 
 use std::collections::HashSet;
+use std::ops::Range;
 
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 
+use crate::format::FieldRole;
 use crate::tui::char_byte_index;
+
+/// One selectable row: its searchable/displayed text, plus which character
+/// ranges of that text are the description/command/tags (from
+/// `format::render_template_fields`) — used only for coloring at render time,
+/// never by matching/navigation, which work on `text` alone.
+#[derive(Debug, Clone)]
+pub(crate) struct PickerItem {
+    pub(crate) text: String,
+    pub(crate) fields: Vec<(FieldRole, Range<usize>)>,
+}
 
 #[derive(Debug, Clone)]
 struct Match {
@@ -25,7 +37,7 @@ struct Match {
 /// Score and locate every item in `items` that fuzzy-matches `query`, best
 /// match first; every item, in original order, if `query` is empty (mirrors
 /// fzf showing the full list before you start typing).
-fn compute_matches(items: &[String], query: &str) -> Vec<Match> {
+fn compute_matches(items: &[PickerItem], query: &str) -> Vec<Match> {
     if query.is_empty() {
         return (0..items.len())
             .map(|index| Match {
@@ -41,7 +53,7 @@ fn compute_matches(items: &[String], query: &str) -> Vec<Match> {
         .enumerate()
         .filter_map(|(index, item)| {
             matcher
-                .fuzzy_indices(item, query)
+                .fuzzy_indices(&item.text, query)
                 .map(|(score, positions)| (score, Match { index, positions }))
         })
         .collect();
@@ -53,7 +65,7 @@ fn compute_matches(items: &[String], query: &str) -> Vec<Match> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PickerState {
-    items: Vec<String>,
+    items: Vec<PickerItem>,
     query: String,
     /// Char index, not byte offset — matches `dialog::Field::Text`'s cursor.
     cursor: usize,
@@ -65,7 +77,7 @@ pub(crate) struct PickerState {
 }
 
 impl PickerState {
-    pub(crate) fn new(items: Vec<String>, initial_query: &str) -> Self {
+    pub(crate) fn new(items: Vec<PickerItem>, initial_query: &str) -> Self {
         let query = initial_query.to_string();
         let matches = compute_matches(&items, &query);
         let cursor = query.chars().count();
@@ -195,7 +207,10 @@ pub(crate) fn handle_key(
 /// snippets), which redirects stdout but leaves the controlling terminal
 /// otherwise intact. Drawing the picker there instead keeps that working,
 /// matching how external selectors like fzf behave under the same redirection.
-pub(crate) fn pick(items: &[String], initial_query: Option<&str>) -> anyhow::Result<Vec<usize>> {
+pub(crate) fn pick(
+    items: &[PickerItem],
+    initial_query: Option<&str>,
+) -> anyhow::Result<Vec<usize>> {
     if items.is_empty() {
         return Ok(Vec::new());
     }
@@ -240,7 +255,7 @@ fn restore_terminal() {
 
 fn run_picker_loop(
     terminal: &mut ratatui::Terminal<PickerBackend>,
-    items: &[String],
+    items: &[PickerItem],
     initial_query: &str,
 ) -> anyhow::Result<Vec<usize>> {
     use anyhow::Context;
@@ -266,6 +281,25 @@ fn run_picker_loop(
             PickStep::Cancelled => return Ok(Vec::new()),
         }
     }
+}
+
+/// Base color for the character at `ci` in an item's text, matching
+/// `pet list --oneline`'s actual value-coloring (the one existing place that
+/// colors values rather than just labels) — description green, command
+/// yellow, tags cyan; literal template text (brackets, separators) neutral.
+fn field_color(fields: &[(FieldRole, Range<usize>)], ci: usize) -> ratatui::style::Color {
+    use ratatui::style::Color;
+
+    for (role, range) in fields {
+        if range.contains(&ci) {
+            return match role {
+                FieldRole::Description => Color::LightGreen,
+                FieldRole::Command => Color::LightYellow,
+                FieldRole::Tags => Color::LightCyan,
+            };
+        }
+    }
+    Color::White
 }
 
 fn render(frame: &mut ratatui::Frame, state: &PickerState) {
@@ -317,7 +351,7 @@ fn render(frame: &mut ratatui::Frame, state: &PickerState) {
         (start..end)
             .map(|i| {
                 let m = &state.matches[i];
-                let item = state.items[m.index].as_str();
+                let item = &state.items[m.index];
                 let focused = i == state.focus;
                 let selected = state.selected.contains(&m.index);
 
@@ -334,14 +368,14 @@ fn render(frame: &mut ratatui::Frame, state: &PickerState) {
                         .add_modifier(Modifier::BOLD),
                 )];
 
-                for (ci, ch) in item.chars().enumerate() {
-                    let style = if m.positions.contains(&ci) {
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::White)
-                    };
+                for (ci, ch) in item.text.chars().enumerate() {
+                    let mut style = Style::default().fg(field_color(&item.fields, ci));
+                    if m.positions.contains(&ci) {
+                        // A modifier, not a competing color, so the highlight
+                        // layers over description/command/tags alike without
+                        // clashing with whichever field color is already there.
+                        style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+                    }
                     spans.push(Span::styled(ch.to_string(), style));
                 }
 
@@ -378,8 +412,14 @@ mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    fn items(values: &[&str]) -> Vec<String> {
-        values.iter().map(|s| s.to_string()).collect()
+    fn items(values: &[&str]) -> Vec<PickerItem> {
+        values
+            .iter()
+            .map(|s| PickerItem {
+                text: s.to_string(),
+                fields: Vec::new(),
+            })
+            .collect()
     }
 
     fn continuing(step: PickStep) -> PickerState {
@@ -593,5 +633,38 @@ mod tests {
         let state = PickerState::new(items(&["a"]), "");
         let state = continuing(handle_key(state, KeyCode::Char('c'), KeyModifiers::NONE));
         assert_eq!(state.query, "c");
+    }
+
+    // render(): field-colored rows. Renders into a TestBackend and inspects the
+    // resulting buffer's cell colors directly, rather than just trusting the
+    // code that assigns them.
+
+    #[test]
+    fn render_colors_description_command_and_tags_distinctly() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        use ratatui::style::Color;
+
+        let item = PickerItem {
+            text: "[greet]: echo hi #demo ".to_string(),
+            fields: vec![
+                (FieldRole::Description, 1..6),
+                (FieldRole::Command, 9..16),
+                (FieldRole::Tags, 17..23),
+            ],
+        };
+        let state = PickerState::new(vec![item], "");
+        let backend = TestBackend::new(70, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, &state)).unwrap();
+        let buf = terminal.backend().buffer();
+
+        // Row 4 = the first list row: 3-row input box + list border above it.
+        // Column = 1 (list border) + 2 (marker) + char index.
+        let fg_at = |x: u16| buf[(x, 4)].fg;
+        assert_eq!(fg_at(3), Color::White, "'[' is literal template text");
+        assert_eq!(fg_at(4), Color::LightGreen, "'g' starts the description");
+        assert_eq!(fg_at(12), Color::LightYellow, "'e' starts the command");
+        assert_eq!(fg_at(20), Color::LightCyan, "'#' starts the tags");
     }
 }
