@@ -18,6 +18,14 @@ pub struct SelectOptions {
     pub color: bool,
 }
 
+/// `selectcmd`'s sentinel value for the built-in fuzzy picker (`picker::pick`)
+/// instead of shelling out to an external tool like `fzf`.
+pub(crate) const BUILTIN_SELECTCMD: &str = "builtin";
+
+fn is_builtin(general: &GeneralConfig) -> bool {
+    general.selectcmd.trim() == BUILTIN_SELECTCMD
+}
+
 /// Format every snippet via `general.format`, run the result through the configured
 /// selector, and map each selected line back to its full stored snippet. Shared by
 /// `search`/`exec`/`clip` (via `select_commands`) and `delete`, which — unlike the
@@ -28,7 +36,10 @@ pub fn select_snippets(
     snippets: &[SnippetInfo],
     opts: &SelectOptions,
 ) -> Result<Vec<SnippetInfo>> {
-    let color = general.color || opts.color;
+    // The picker renders natively via ratatui styling, not by shipping raw ANSI
+    // codes through a pipe for an external tool to interpret — embedding them in
+    // the display text here would just show up as literal escape-code garbage.
+    let color = !is_builtin(general) && (general.color || opts.color);
     let mut lookup: HashMap<String, SnippetInfo> = HashMap::new();
     let mut items = Vec::with_capacity(snippets.len());
 
@@ -113,6 +124,11 @@ fn run_selectcmd(
 ) -> Result<Vec<String>> {
     if items.is_empty() {
         return Ok(vec![]);
+    }
+
+    if is_builtin(general) {
+        let indices = crate::picker::pick(items, opts.query.as_deref())?;
+        return Ok(indices.into_iter().map(|i| items[i].clone()).collect());
     }
 
     let mut selectcmd = general.selectcmd.clone();
@@ -281,6 +297,40 @@ mod tests {
         };
         let result = select_commands(&general, &[], &SelectOptions::default()).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn builtin_selectcmd_on_no_snippets_returns_empty_without_opening_a_terminal() {
+        let general = GeneralConfig {
+            selectcmd: BUILTIN_SELECTCMD.to_string(),
+            ..GeneralConfig::default()
+        };
+        let result = select_commands(&general, &[], &SelectOptions::default()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn builtin_selectcmd_is_attempted_for_non_empty_snippets() {
+        // No real terminal in the test harness, proving the builtin picker really
+        // was attempted here (rather than silently falling through to the external
+        // path) — mirrors how dialog.rs's own resolve_params is tested.
+        let general = GeneralConfig {
+            selectcmd: BUILTIN_SELECTCMD.to_string(),
+            ..GeneralConfig::default()
+        };
+        let snippets = vec![SnippetInfo {
+            filename: Default::default(),
+            description: "greet".to_string(),
+            command: "echo hi".to_string(),
+            tag: vec![],
+            output: String::new(),
+        }];
+
+        let err = select_commands(&general, &snippets, &SelectOptions::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("terminal") || err.to_string().contains("raw mode"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

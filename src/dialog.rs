@@ -229,6 +229,8 @@ pub fn handle_key(
 fn apply_key_to_field(field: &mut Field, code: crossterm::event::KeyCode) {
     use crossterm::event::KeyCode;
 
+    use crate::tui::char_byte_index;
+
     match &mut field.kind {
         FieldKind::Options { options, selected } => match code {
             KeyCode::Up | KeyCode::Left => {
@@ -277,12 +279,6 @@ fn apply_key_to_field(field: &mut Field, code: crossterm::event::KeyCode) {
             _ => {}
         },
     }
-}
-
-fn char_byte_index(s: &str, char_idx: usize) -> usize {
-    s.char_indices()
-        .nth(char_idx)
-        .map_or(s.len(), |(byte_idx, _)| byte_idx)
 }
 
 /// Interactively resolve `params` found in `command`, returning the chosen values
@@ -348,23 +344,8 @@ const PREVIEW_HEIGHT: u16 = 3;
 const FOOTER_HEIGHT: u16 = 1;
 const SCROLL_HINT_HEIGHT: u16 = 1;
 
-/// Which fields are on screen, as a `[start, end)` range into `state.fields`, given
-/// how many field rows fit (`capacity`). Keeps `state.focus` inside the window,
-/// scrolling the minimum amount needed rather than re-centering every frame.
-fn visible_window(total: usize, focus: usize, capacity: usize) -> (usize, usize) {
-    if capacity == 0 || total <= capacity {
-        return (0, total);
-    }
-    let max_start = total - capacity;
-    let start = if focus >= capacity {
-        (focus + 1 - capacity).min(max_start)
-    } else {
-        0
-    };
-    (start, start + capacity)
-}
-
 fn render(frame: &mut ratatui::Frame, state: &DialogState, command: &str) {
+    use crate::tui::visible_window;
     use ratatui::layout::{Alignment, Constraint, Direction, Layout};
     use ratatui::style::{Color, Modifier, Style};
     use ratatui::text::{Line, Span};
@@ -987,31 +968,5 @@ mod tests {
     fn options_field_never_needs_input() {
         let state = DialogState::new(&params(&[("color", "|_red_||_blue_|")]));
         assert!(!state.fields[0].needs_input());
-    }
-
-    // visible_window: the scroll-to-keep-focus-visible logic used by render().
-
-    #[test]
-    fn visible_window_shows_everything_when_it_all_fits() {
-        assert_eq!(visible_window(3, 0, 5), (0, 3));
-        assert_eq!(visible_window(3, 2, 3), (0, 3));
-    }
-
-    #[test]
-    fn visible_window_stays_at_top_while_focus_is_within_the_first_page() {
-        assert_eq!(visible_window(10, 0, 3), (0, 3));
-        assert_eq!(visible_window(10, 2, 3), (0, 3));
-    }
-
-    #[test]
-    fn visible_window_scrolls_forward_to_keep_focus_in_view() {
-        assert_eq!(visible_window(10, 3, 3), (1, 4));
-        assert_eq!(visible_window(10, 9, 3), (7, 10));
-    }
-
-    #[test]
-    fn visible_window_never_scrolls_past_the_last_page() {
-        // Even at the very last field, the window shouldn't run off the end.
-        assert_eq!(visible_window(5, 4, 3), (2, 5));
     }
 }
