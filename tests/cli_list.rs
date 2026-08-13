@@ -66,6 +66,69 @@ fn list_tags_filters_snippets_without_matching_tag() {
 }
 
 #[test]
+fn list_filter_matches_description_or_command_and_combines_with_tag() {
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("config.toml");
+    pet::config::Config::load(&config_path).unwrap();
+
+    let snippet_file = config_dir.path().join("snippet.toml");
+    std::fs::write(
+        &snippet_file,
+        r#"
+[[snippets]]
+  description = "compress a directory"
+  command = "tar -czf out.tar.gz ."
+  tag = ["files"]
+
+[[snippets]]
+  description = "list running containers"
+  command = "docker ps"
+  tag = ["net"]
+
+[[snippets]]
+  description = "ping a host"
+  command = "ping 8.8.8.8"
+"#,
+    )
+    .unwrap();
+
+    // Matches by description text alone.
+    Command::cargo_bin("pet")
+        .unwrap()
+        .env("PET_CONFIG_DIR", config_dir.path())
+        .args(["list", "--oneline", "-f", "directory"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("compress a directory")
+                .and(predicate::str::contains("docker ps").not())
+                .and(predicate::str::contains("ping a host").not()),
+        );
+
+    // Matches by command text alone, case-insensitively.
+    Command::cargo_bin("pet")
+        .unwrap()
+        .env("PET_CONFIG_DIR", config_dir.path())
+        .args(["list", "--oneline", "-f", "DOCKER"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("list running containers")
+                .and(predicate::str::contains("compress a directory").not()),
+        );
+
+    // -f and -t combine (AND, not OR): "containers" only survives if it also
+    // carries the "net" tag.
+    Command::cargo_bin("pet")
+        .unwrap()
+        .env("PET_CONFIG_DIR", config_dir.path())
+        .args(["list", "--oneline", "-f", "containers", "-t", "files"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
 fn version_prints_version_string() {
     Command::cargo_bin("pet")
         .unwrap()

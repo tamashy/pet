@@ -117,6 +117,37 @@ fn search_tag_flag_filters_before_selection() {
 }
 
 #[test]
+fn search_filter_flag_matches_description_or_command_before_selection() {
+    let config_dir = tempfile::tempdir().unwrap();
+    setup(config_dir.path(), "cat");
+
+    // "openssl" only appears in the SSL snippet's command, not its description.
+    Command::cargo_bin("pet")
+        .unwrap()
+        .env("PET_CONFIG_DIR", config_dir.path())
+        .args(["search", "-f", "openssl"])
+        .assert()
+        .success()
+        .stdout("echo | openssl s_client -connect example.com:443");
+}
+
+#[test]
+fn search_filter_and_tag_flags_combine() {
+    let config_dir = tempfile::tempdir().unwrap();
+    setup(config_dir.path(), "cat");
+
+    // "big" matches the "fs"-tagged snippet's description; requiring tag "demo"
+    // on top of that leaves nothing.
+    Command::cargo_bin("pet")
+        .unwrap()
+        .env("PET_CONFIG_DIR", config_dir.path())
+        .args(["search", "-f", "big", "-t", "demo"])
+        .assert()
+        .success()
+        .stdout("");
+}
+
+#[test]
 fn search_tag_with_no_matches_selects_nothing() {
     let config_dir = tempfile::tempdir().unwrap();
     setup(config_dir.path(), "cat");

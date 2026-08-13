@@ -44,6 +44,10 @@ pub enum Commands {
         /// List by specified tags as comma separated values
         #[arg(short = 't', long = "tags")]
         tags: Option<String>,
+
+        /// Only show snippets whose description or command contains this text
+        #[arg(short = 'f', long = "filter")]
+        filter: Option<String>,
     },
     /// Edit config file
     Configure,
@@ -84,6 +88,11 @@ pub enum Commands {
         /// Filter tag
         #[arg(short = 't', long = "tag")]
         tag: Option<String>,
+
+        /// Only offer snippets whose description or command contains this
+        /// text, narrowing the list before the selector opens
+        #[arg(short = 'f', long = "filter")]
+        filter: Option<String>,
 
         /// Use delim as the command delimiter character
         #[arg(short = 'd', long = "delimiter", default_value = "; ")]
