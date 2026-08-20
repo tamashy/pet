@@ -39,6 +39,7 @@ fn run() -> Result<()> {
             tag,
             multiline,
             editor,
+            last,
         } => {
             cmd::new::run(
                 &cfg,
@@ -47,6 +48,7 @@ fn run() -> Result<()> {
                     prompt_tag: tag,
                     multiline,
                     use_editor: editor,
+                    use_last: last,
                 },
             )?;
         }

@@ -30,6 +30,8 @@ search — without digging through shell history or a notes file.
   too
 - Fuzzy-select and delete a snippet without hand-editing the TOML (`pet
   delete`)
+- Save your previous shell command as a snippet without retyping it (`pet new
+  -l`/`--last`)
 - Reads config/snippet files from older installs too, including ones that
   predate the current field-casing conventions
 
@@ -154,7 +156,14 @@ pet new echo hello world      # command given, still prompts for description/tag
 pet new -t                    # also prompts for tags
 pet new -m                    # multiline command (blank line twice to finish)
 pet new -e                    # skip prompts, open $EDITOR on a blank entry instead
+pet new -l                    # use the previous shell command (read from history) instead of prompting for it
 ```
+
+`-l`/`--last` reads your shell's history file directly (`$HISTFILE`, or the
+default location for `$SHELL`) rather than needing a wrapper shell function.
+On shells that only flush history to disk periodically (e.g. plain bash
+without `history -a` in `PROMPT_COMMAND`), the previous command may not be on
+disk yet when `pet new -l` runs.
 
 ### `pet list`
 

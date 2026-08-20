@@ -8,6 +8,7 @@ use owo_colors::{OwoColorize, Stream::Stdout};
 use crate::config::Config;
 use crate::editor;
 use crate::error::SnippetError;
+use crate::history;
 use crate::path::expand_absolute;
 use crate::snippet::{SnippetInfo, Snippets};
 
@@ -16,6 +17,7 @@ pub struct NewOptions {
     pub prompt_tag: bool,
     pub multiline: bool,
     pub use_editor: bool,
+    pub use_last: bool,
 }
 
 pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
@@ -37,7 +39,14 @@ pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
         return Ok(());
     }
 
-    let command = if !opts.command_args.is_empty() {
+    let command = if opts.use_last {
+        let command = history::last_command()?;
+        println!(
+            "{} {command}",
+            "Command>".if_supports_color(Stdout, |t| t.bright_yellow())
+        );
+        command
+    } else if !opts.command_args.is_empty() {
         let command = opts.command_args.join(" ");
         println!(
             "{} {command}",

@@ -34,6 +34,11 @@ pub enum Commands {
         /// Use editor to create snippet
         #[arg(short = 'e', long = "editor")]
         editor: bool,
+
+        /// Use the previous shell command as the command, read from your shell's
+        /// history file, instead of prompting for it
+        #[arg(short = 'l', long = "last", conflicts_with_all = ["command", "multiline", "editor"])]
+        last: bool,
     },
     /// Show all snippets
     List {
