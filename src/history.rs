@@ -10,12 +10,17 @@ use anyhow::{Result, anyhow, bail};
 /// `pet new --last` command as the newest entry by the time we read the file.
 pub fn last_command() -> Result<String> {
     let path = history_file_path()?;
-    let contents = std::fs::read_to_string(&path).map_err(|source| {
+    let bytes = std::fs::read(&path).map_err(|source| {
         anyhow!(
             "failed to read shell history file {}: {source}",
             path.display()
         )
     })?;
+    // History files aren't guaranteed to be valid UTF-8 (pasted binary/Latin-1
+    // text, odd terminal output, zsh's control-char metafication, etc. all show
+    // up in the wild) — decode best-effort rather than failing the whole lookup
+    // over one stray byte, since we only need the most recent entry anyway.
+    let contents = String::from_utf8_lossy(&bytes);
 
     parse_history(&contents, &shell_name())
         .into_iter()
@@ -144,6 +149,18 @@ mod tests {
             parse_history(contents, "bash"),
             vec!["echo one", "echo two"]
         );
+    }
+
+    #[test]
+    fn invalid_utf8_bytes_are_decoded_lossily_instead_of_erroring() {
+        // Mirrors a real .zsh_history entry: pasted text with a stray invalid
+        // byte, which `read_to_string` used to hard-fail on for the whole file.
+        let mut bytes = b": 1700000000:0;\xd0\xbf\xd1\x83\xa9\n".to_vec();
+        bytes.extend_from_slice(b": 1700000001:0;echo two\n");
+        let contents = String::from_utf8_lossy(&bytes);
+
+        let commands = parse_history(&contents, "zsh");
+        assert_eq!(commands.last().unwrap(), "echo two");
     }
 
     #[test]
