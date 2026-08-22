@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
 
-use pet::cli::{Cli, Commands};
+use pet::cli::{Cli, Commands, SyncAction};
 use pet::cmd;
 use pet::config::{self, Config};
+use pet::gist::GistApiClient;
 
 fn main() {
     if let Err(err) = run() {
@@ -134,6 +135,17 @@ fn run() -> Result<()> {
         }
         Commands::Version => {
             cmd::version::run();
+        }
+        Commands::Sync { action } => {
+            let base_url = std::env::var("GIST_API_BASE_URL")
+                .unwrap_or_else(|_| "https://api.github.com".to_string());
+            let client = GistApiClient::with_base_url(cfg.gist.access_token.clone(), base_url);
+            match action {
+                SyncAction::Push => cmd::sync::run_push(&cfg, &config_path, &client)?,
+                SyncAction::Pull { yes } => {
+                    cmd::sync::run_pull(&cfg, &client, yes, cmd::sync::confirm_overwrite)?
+                }
+            }
         }
         Commands::Completions { .. } => unreachable!("handled above, before config is loaded"),
     }

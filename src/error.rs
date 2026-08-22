@@ -57,3 +57,47 @@ pub enum SnippetError {
     #[error("snippet [{0}] already exists")]
     DuplicateDescription(String),
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum SyncError {
+    #[error(
+        "no Gist access token configured\nPlease run 'pet configure' and set access_token under [Gist] (a GitHub personal access token with the 'gist' scope), or set the GITHUB_TOKEN environment variable"
+    )]
+    MissingAccessToken,
+    #[error(
+        "no gist_id configured, nothing to pull yet\nRun 'pet sync push' first to create a gist, or set gist_id under [Gist] in config.toml if you already have one"
+    )]
+    MissingGistId,
+    #[error(
+        "GitHub rejected the access token (401 Unauthorized) — check access_token under [Gist] (needs the 'gist' scope) or GITHUB_TOKEN"
+    )]
+    Unauthorized,
+    #[error(
+        "gist {0} not found (404) — check gist_id under [Gist], or that the token has access to it"
+    )]
+    GistNotFound(String),
+    #[error(
+        "gist {gist_id} has no file named \"{file_name}\" (found: {found:?}) — check file_name under [Gist]"
+    )]
+    FileNotFoundInGist {
+        gist_id: String,
+        file_name: String,
+        found: Vec<String>,
+    },
+    #[error(
+        "gist file \"{0}\" was truncated by GitHub's API (the file is too large to fetch in full) — refusing to pull a partial snippet file"
+    )]
+    Truncated(String),
+    #[error("network request to GitHub failed: {0}")]
+    Request(#[from] Box<ureq::Error>),
+    #[error("failed to read response body from GitHub: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("failed to parse GitHub's response as JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error(
+        "the gist's snippet file failed to parse as valid TOML, refusing to overwrite your local snippets: {0}"
+    )]
+    InvalidRemoteSnippets(#[source] Box<toml::de::Error>),
+    #[error("GitHub returned an unexpected response (HTTP {status}): {body}")]
+    UnexpectedStatus { status: u16, body: String },
+}

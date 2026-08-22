@@ -191,13 +191,19 @@ impl Config {
             ghe_gist: GheGistConfig::default(),
         };
 
-        let serialized = toml::to_string_pretty(&cfg)?;
+        cfg.save(path)?;
+
+        Ok(cfg)
+    }
+
+    /// Serialize and write `self` back to `path`. Used by `pet sync push` to
+    /// persist a newly-created gist_id back into config.toml.
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        let serialized = toml::to_string_pretty(self)?;
         std::fs::write(path, serialized).map_err(|source| ConfigError::Write {
             path: path.to_path_buf(),
             source,
-        })?;
-
-        Ok(cfg)
+        })
     }
 }
 

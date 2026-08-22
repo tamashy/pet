@@ -158,4 +158,21 @@ pub enum Commands {
         /// Which shell to generate completions for
         shell: clap_complete::Shell,
     },
+    /// Sync the snippet file with a GitHub Gist
+    Sync {
+        #[command(subcommand)]
+        action: SyncAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SyncAction {
+    /// Upload the local snippet file to the configured gist (creates it on the first push)
+    Push,
+    /// Download the configured gist and overwrite the local snippet file
+    Pull {
+        /// Skip the confirmation prompt and overwrite immediately
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
+    },
 }
