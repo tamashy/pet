@@ -34,8 +34,10 @@ search — without digging through shell history or a notes file.
   -l`/`--last`)
 - Reads config/snippet files from older installs too, including ones that
   predate the current field-casing conventions
+- Sync your snippet file to a GitHub Gist (`pet sync push`/`pet sync pull`)
 
-Not yet implemented: syncing snippets via Gist/GitLab/GHE.
+Not yet implemented: syncing via GitLab or GitHub Enterprise Gist (GitHub.com
+Gist only, for now).
 
 ## Installation
 
@@ -139,6 +141,8 @@ Commands:
   clip        Copy the selected commands to clipboard
   version     Print the version number
   completions Print a shell completion script
+  sync push   Upload the snippet file to a gist
+  sync pull   Download the gist and overwrite the snippet file
 
 Flags:
       --config <path>   config file (default $HOME/.config/pet/config.toml)
@@ -227,6 +231,30 @@ pet edit -t work               # narrow the file picker to snippets tagged "work
 
 Open `config.toml` in `$EDITOR`.
 
+### `pet sync push` / `pet sync pull`
+
+Sync your snippet file with a [GitHub Gist](https://gist.github.com). `push`
+uploads it as-is (creating the gist on the first push, updating it after);
+`pull` downloads it and replaces your local snippet file.
+
+```bash
+pet sync push                 # create the gist on first run, update it after
+pet sync pull                 # prompts before overwriting local snippets
+pet sync pull -y              # skip the confirmation prompt
+```
+
+Set `access_token` under `[Gist]` in `config.toml` first (`pet configure`) —
+a [personal access token](https://github.com/settings/tokens) with the
+`gist` scope. A `GITHUB_TOKEN` environment variable works too, if you'd
+rather not put the token in a file — `access_token` in config.toml takes
+priority when both are set. `gist_id` fills in automatically after your
+first `pet sync push`; `file_name` (default `pet-snippet.toml`) and `public`
+control the gist's file name and visibility.
+
+GitLab and GitHub Enterprise sync aren't implemented yet, despite
+`config.toml` having sections for them (kept for compatibility with the
+original Go pet's config format).
+
 ## Parameters
 
 Snippets can contain placeholders that get filled in interactively:
@@ -260,6 +288,12 @@ directly with `--config`. It's created for you on first run.
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
   format = "[$description]: $command $tags"   # how snippets are displayed to the selector
   color = true                     # colorize description/tags in the selector list, same as --color (default: true for new configs; set false to disable)
+
+[Gist]
+  file_name = "pet-snippet.toml"   # file name inside the gist
+  access_token = ""                # GitHub personal access token (gist scope) — or set GITHUB_TOKEN instead
+  gist_id = ""                     # filled in automatically after your first `pet sync push`
+  public = false                   # create the gist as public
 ```
 
 `usage`/`-usage` sort by how often a snippet has been picked via `search`/`exec`/`clip`

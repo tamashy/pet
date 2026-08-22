@@ -6,4 +6,5 @@ pub mod exec;
 pub mod list;
 pub mod new;
 pub mod search;
+pub mod sync;
 pub mod version;
