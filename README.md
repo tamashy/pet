@@ -243,17 +243,17 @@ pet sync pull                 # prompts before overwriting local snippets
 pet sync pull -y              # skip the confirmation prompt
 ```
 
-Set `access_token` under `[Gist]` in `config.toml` first (`pet configure`) —
-a [personal access token](https://github.com/settings/tokens) with the
+Set `access_token` under `[Gist]` in `config.toml` first (`pet configure`),
+using a [personal access token](https://github.com/settings/tokens) with the
 `gist` scope. A `GITHUB_TOKEN` environment variable works too, if you'd
-rather not put the token in a file — `access_token` in config.toml takes
+rather not put the token in a file; config.toml's `access_token` takes
 priority when both are set. `gist_id` fills in automatically after your
-first `pet sync push`; `file_name` (default `pet-snippet.toml`) and `public`
+first `pet sync push`. `file_name` (default `pet-snippet.toml`) and `public`
 control the gist's file name and visibility.
 
-GitLab and GitHub Enterprise sync aren't implemented yet, despite
-`config.toml` having sections for them (kept for compatibility with the
-original Go pet's config format).
+GitLab and GitHub Enterprise sync aren't implemented yet. `config.toml`
+still has sections for them, kept for compatibility with the original Go
+pet's config format.
 
 ## Parameters
 
@@ -291,7 +291,7 @@ directly with `--config`. It's created for you on first run.
 
 [Gist]
   file_name = "pet-snippet.toml"   # file name inside the gist
-  access_token = ""                # GitHub personal access token (gist scope) — or set GITHUB_TOKEN instead
+  access_token = ""                # GitHub personal access token (gist scope), or set GITHUB_TOKEN instead
   gist_id = ""                     # filled in automatically after your first `pet sync push`
   public = false                   # create the gist as public
 ```
