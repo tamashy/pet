@@ -34,10 +34,10 @@ search — without digging through shell history or a notes file.
   -l`/`--last`)
 - Reads config/snippet files from older installs too, including ones that
   predate the current field-casing conventions
-- Sync your snippet file to a GitHub Gist (`pet sync push`/`pet sync pull`)
+- Sync your snippet file to a GitHub Gist or a GitLab snippet (`pet sync
+  push`/`pet sync pull`)
 
-Not yet implemented: syncing via GitLab or GitHub Enterprise Gist (GitHub.com
-Gist only, for now).
+Not yet implemented: syncing via GitHub Enterprise Gist.
 
 ## Installation
 
@@ -233,27 +233,41 @@ Open `config.toml` in `$EDITOR`.
 
 ### `pet sync push` / `pet sync pull`
 
-Sync your snippet file with a [GitHub Gist](https://gist.github.com). `push`
-uploads it as-is (creating the gist on the first push, updating it after);
-`pull` downloads it and replaces your local snippet file.
+Sync your snippet file with a [GitHub Gist](https://gist.github.com) or a
+GitLab snippet. `push` uploads it as-is (creating the gist/snippet on the
+first push, updating it after); `pull` downloads it and replaces your local
+snippet file.
 
 ```bash
-pet sync push                 # create the gist on first run, update it after
+pet sync push                 # create the gist/snippet on first run, update it after
 pet sync pull                 # prompts before overwriting local snippets
 pet sync pull -y              # skip the confirmation prompt
 ```
 
-Set `access_token` under `[Gist]` in `config.toml` first (`pet configure`),
-using a [personal access token](https://github.com/settings/tokens) with the
-`gist` scope. A `GITHUB_TOKEN` environment variable works too, if you'd
-rather not put the token in a file; config.toml's `access_token` takes
+`[General] backend` picks which one: `"gist"` (default) or `"gitlab"`.
+
+**Gist**: set `access_token` under `[Gist]` in `config.toml` first (`pet
+configure`), using a [personal access token](https://github.com/settings/tokens)
+with the `gist` scope. A `GITHUB_TOKEN` environment variable works too, if
+you'd rather not put the token in a file; config.toml's `access_token` takes
 priority when both are set. `gist_id` fills in automatically after your
 first `pet sync push`. `file_name` (default `pet-snippet.toml`) and `public`
 control the gist's file name and visibility.
 
-GitLab and GitHub Enterprise sync aren't implemented yet. `config.toml`
-still has sections for them, kept for compatibility with the original Go
-pet's config format.
+**GitLab**: set `access_token` under `[GitLab]`, using a [personal access
+token](https://gitlab.com/-/user_settings/personal_access_tokens) with the
+`api` scope (a `GITLAB_TOKEN` environment variable works too, same priority
+rule as Gist). `url` points at a self-hosted instance (empty means
+gitlab.com). `id` fills in automatically after your first `pet sync push`.
+`file_name` and `visibility` (`private`/`internal`/`public`) work like
+Gist's `file_name`/`public`. `skip_ssl` disables TLS certificate
+verification, for self-hosted instances with self-signed certificates —
+only turn this on if you understand the risk, since it also removes
+protection against a network attacker impersonating your GitLab instance.
+
+GitHub Enterprise sync isn't implemented yet. `config.toml` still has a
+section for it, kept for compatibility with the original Go pet's config
+format.
 
 ## Parameters
 
@@ -288,12 +302,21 @@ directly with `--config`. It's created for you on first run.
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
   format = "[$description]: $command $tags"   # how snippets are displayed to the selector
   color = true                     # colorize description/tags in the selector list, same as --color (default: true for new configs; set false to disable)
+  backend = "gist"                 # sync backend for `pet sync push`/`pet sync pull`: "gist" or "gitlab"
 
 [Gist]
   file_name = "pet-snippet.toml"   # file name inside the gist
   access_token = ""                # GitHub personal access token (gist scope), or set GITHUB_TOKEN instead
   gist_id = ""                     # filled in automatically after your first `pet sync push`
   public = false                   # create the gist as public
+
+[GitLab]
+  file_name = "pet-snippet.toml"   # file name inside the snippet
+  access_token = ""                # GitLab personal access token (api scope), or set GITLAB_TOKEN instead
+  url = ""                         # self-hosted GitLab instance base URL; empty means gitlab.com
+  id = ""                          # filled in automatically after your first `pet sync push`
+  visibility = "private"           # private | internal | public
+  skip_ssl = false                 # skip TLS certificate verification, for a self-hosted instance with a self-signed cert you trust
 ```
 
 `usage`/`-usage` sort by how often a snippet has been picked via `search`/`exec`/`clip`

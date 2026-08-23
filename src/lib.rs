@@ -6,6 +6,7 @@ pub mod editor;
 pub mod error;
 pub mod format;
 pub mod gist;
+pub mod gitlab;
 pub mod history;
 pub mod path;
 pub(crate) mod picker;
