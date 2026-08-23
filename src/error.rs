@@ -88,16 +88,41 @@ pub enum SyncError {
         "gist file \"{0}\" was truncated by GitHub's API (the file is too large to fetch in full) — refusing to pull a partial snippet file"
     )]
     Truncated(String),
-    #[error("network request to GitHub failed: {0}")]
+    #[error("network request to the sync backend failed: {0}")]
     Request(#[from] Box<ureq::Error>),
-    #[error("failed to read response body from GitHub: {0}")]
+    #[error("failed to read the sync backend's response body: {0}")]
     Io(#[from] std::io::Error),
-    #[error("failed to parse GitHub's response as JSON: {0}")]
+    #[error("failed to parse the sync backend's response as JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error(
-        "the gist's snippet file failed to parse as valid TOML, refusing to overwrite your local snippets: {0}"
+        "the remote snippet file failed to parse as valid TOML, refusing to overwrite your local snippets: {0}"
     )]
     InvalidRemoteSnippets(#[source] Box<toml::de::Error>),
-    #[error("GitHub returned an unexpected response (HTTP {status}): {body}")]
+    #[error("the sync backend returned an unexpected response (HTTP {status}): {body}")]
     UnexpectedStatus { status: u16, body: String },
+
+    #[error(
+        "no GitLab access token configured\nPlease run 'pet configure' and set access_token under [GitLab] (a GitLab personal access token with the 'api' scope), or set the GITLAB_TOKEN environment variable"
+    )]
+    GitLabMissingAccessToken,
+    #[error(
+        "no id configured under [GitLab], nothing to pull yet\nRun 'pet sync push' first to create a snippet, or set id under [GitLab] in config.toml if you already have one"
+    )]
+    GitLabMissingId,
+    #[error(
+        "GitLab rejected the access token (401 Unauthorized) — check access_token under [GitLab] (needs the 'api' scope) or GITLAB_TOKEN"
+    )]
+    GitLabUnauthorized,
+    #[error(
+        "GitLab snippet {0} not found (404) — check id under [GitLab], or that the token has access to it"
+    )]
+    GitLabSnippetNotFound(String),
+    #[error(
+        "GitLab snippet {id} doesn't have exactly one file named \"{expected}\" (found: {found:?}) — check file_name under [GitLab], or that the snippet wasn't hand-edited into multiple files"
+    )]
+    GitLabFileNameMismatch {
+        id: String,
+        expected: String,
+        found: Vec<String>,
+    },
 }
