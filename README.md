@@ -34,10 +34,8 @@ search — without digging through shell history or a notes file.
   -l`/`--last`)
 - Reads config/snippet files from older installs too, including ones that
   predate the current field-casing conventions
-- Sync your snippet file to a GitHub Gist or a GitLab snippet (`pet sync
-  push`/`pet sync pull`)
-
-Not yet implemented: syncing via GitHub Enterprise Gist.
+- Sync your snippet file to a GitHub Gist, a GitLab snippet, or a GitHub
+  Enterprise gist (`pet sync push`/`pet sync pull`)
 
 ## Installation
 
@@ -233,10 +231,10 @@ Open `config.toml` in `$EDITOR`.
 
 ### `pet sync push` / `pet sync pull`
 
-Sync your snippet file with a [GitHub Gist](https://gist.github.com) or a
-GitLab snippet. `push` uploads it as-is (creating the gist/snippet on the
-first push, updating it after); `pull` downloads it and replaces your local
-snippet file.
+Sync your snippet file with a [GitHub Gist](https://gist.github.com), a
+GitLab snippet, or a gist on a GitHub Enterprise instance. `push` uploads it
+as-is (creating the gist/snippet on the first push, updating it after);
+`pull` downloads it and replaces your local snippet file.
 
 ```bash
 pet sync push                 # create the gist/snippet on first run, update it after
@@ -244,7 +242,8 @@ pet sync pull                 # prompts before overwriting local snippets
 pet sync pull -y              # skip the confirmation prompt
 ```
 
-`[General] backend` picks which one: `"gist"` (default) or `"gitlab"`.
+`[General] backend` picks which one: `"gist"` (default), `"gitlab"`, or
+`"ghe"`.
 
 **Gist**: set `access_token` under `[Gist]` in `config.toml` first (`pet
 configure`), using a [personal access token](https://github.com/settings/tokens)
@@ -265,8 +264,13 @@ verification, for self-hosted instances with self-signed certificates —
 only turn this on if you understand the risk, since it also removes
 protection against a network attacker impersonating your GitLab instance.
 
-GitHub Enterprise sync isn't implemented yet. `config.toml` still has a
-section for it, kept for compatibility with the original Go pet's config
+**GHE (GitHub Enterprise)**: same idea as Gist, under `[GHEGist]`. GitHub
+Enterprise's Gist API matches github.com's. Set `base_url` to your
+instance's URL, e.g. `https://ghe.example.com`; `pet` appends `/api/v3`
+itself. `access_token` (or a `GHE_GIST_TOKEN` environment variable, same
+priority rule as the others) needs the `gist` scope on that instance.
+`gist_id`, `file_name`, and `public` work the same as Gist's. `upload_url`
+is unused, kept only for compatibility with the original Go pet's config
 format.
 
 ## Parameters
@@ -302,7 +306,7 @@ directly with `--config`. It's created for you on first run.
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
   format = "[$description]: $command $tags"   # how snippets are displayed to the selector
   color = true                     # colorize description/tags in the selector list, same as --color (default: true for new configs; set false to disable)
-  backend = "gist"                 # sync backend for `pet sync push`/`pet sync pull`: "gist" or "gitlab"
+  backend = "gist"                 # sync backend for `pet sync push`/`pet sync pull`: "gist", "gitlab", or "ghe"
 
 [Gist]
   file_name = "pet-snippet.toml"   # file name inside the gist
@@ -317,6 +321,13 @@ directly with `--config`. It's created for you on first run.
   id = ""                          # filled in automatically after your first `pet sync push`
   visibility = "private"           # private | internal | public
   skip_ssl = false                 # skip TLS certificate verification, for a self-hosted instance with a self-signed cert you trust
+
+[GHEGist]
+  base_url = ""                    # your GitHub Enterprise instance's URL, e.g. "https://ghe.example.com" (required; pet appends /api/v3 itself)
+  file_name = "pet-snippet.toml"   # file name inside the gist
+  access_token = ""                # GitHub Enterprise personal access token (gist scope), or set GHE_GIST_TOKEN instead
+  gist_id = ""                     # filled in automatically after your first `pet sync push`
+  public = false                   # create the gist as public
 ```
 
 `usage`/`-usage` sort by how often a snippet has been picked via `search`/`exec`/`clip`

@@ -6,6 +6,7 @@ use clap::{CommandFactory, Parser};
 use pet::cli::{Cli, Commands, SyncAction};
 use pet::cmd;
 use pet::config::{self, Config};
+use pet::error::SyncError;
 use pet::gist::GistApiClient;
 use pet::gitlab::GitLabApiClient;
 
@@ -141,7 +142,12 @@ fn run() -> Result<()> {
             "gist" => {
                 let base_url = std::env::var("GIST_API_BASE_URL")
                     .unwrap_or_else(|_| "https://api.github.com".to_string());
-                let client = GistApiClient::with_base_url(cfg.gist.access_token.clone(), base_url);
+                let access_token = cmd::sync::resolve_access_token(
+                    &cfg.gist.access_token,
+                    std::env::var("GITHUB_TOKEN").ok(),
+                    SyncError::MissingAccessToken,
+                )?;
+                let client = GistApiClient::with_base_url(access_token, base_url);
                 match action {
                     SyncAction::Push => cmd::sync::run_push_gist(&cfg, &config_path, &client)?,
                     SyncAction::Pull { yes } => {
@@ -150,11 +156,13 @@ fn run() -> Result<()> {
                 }
             }
             "gitlab" => {
-                let client = GitLabApiClient::new(
-                    cfg.gitlab.access_token.clone(),
-                    cfg.gitlab.url.clone(),
-                    cfg.gitlab.skip_ssl,
-                );
+                let access_token = cmd::sync::resolve_access_token(
+                    &cfg.gitlab.access_token,
+                    std::env::var("GITLAB_TOKEN").ok(),
+                    SyncError::GitLabMissingAccessToken,
+                )?;
+                let client =
+                    GitLabApiClient::new(access_token, cfg.gitlab.url.clone(), cfg.gitlab.skip_ssl);
                 match action {
                     SyncAction::Push => cmd::sync::run_push_gitlab(&cfg, &config_path, &client)?,
                     SyncAction::Pull { yes } => cmd::sync::run_pull_gitlab(
@@ -165,8 +173,32 @@ fn run() -> Result<()> {
                     )?,
                 }
             }
+            "ghe" => {
+                if cfg.ghe_gist.base_url.is_empty() {
+                    bail!(
+                        "no base_url configured under [GHEGist] — set it to your GitHub Enterprise instance's URL, e.g. \"https://ghe.example.com\""
+                    );
+                }
+                let access_token = cmd::sync::resolve_access_token(
+                    &cfg.ghe_gist.access_token,
+                    std::env::var("GHE_GIST_TOKEN").ok(),
+                    SyncError::GheMissingAccessToken,
+                )?;
+                let client = GistApiClient::ghe(access_token, cfg.ghe_gist.base_url.clone());
+                match action {
+                    SyncAction::Push => cmd::sync::run_push_ghe_gist(&cfg, &config_path, &client)?,
+                    SyncAction::Pull { yes } => cmd::sync::run_pull_ghe_gist(
+                        &cfg,
+                        &client,
+                        yes,
+                        cmd::sync::confirm_overwrite,
+                    )?,
+                }
+            }
             other => {
-                bail!("unknown [General] backend \"{other}\" — expected \"gist\" or \"gitlab\"")
+                bail!(
+                    "unknown [General] backend \"{other}\" — expected \"gist\", \"gitlab\", or \"ghe\""
+                )
             }
         },
         Commands::Completions { .. } => unreachable!("handled above, before config is loaded"),

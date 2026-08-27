@@ -17,7 +17,16 @@ use crate::snippet::Snippets;
 /// env var like `$GITHUB_TOKEN`/`$GITLAB_TOKEN`) so a user can keep the token
 /// out of a plaintext file if they'd rather. `missing_err` names which
 /// backend's error to raise if both are empty.
-fn resolve_access_token(
+///
+/// `pub` (not just used internally) because `main.rs` needs the *resolved*
+/// token to construct each backend's HTTP client with — constructing it from
+/// the raw config field alone would silently drop the env-var fallback for
+/// the actual request, even though `run_push_*`/`run_pull_*` call this same
+/// function again and would report a clear error if a token were genuinely
+/// missing. That inner call stays for defense in depth (these are public
+/// functions callable without going through `main.rs`), but it can no longer
+/// mask a resolved-but-unused-by-the-client token.
+pub fn resolve_access_token(
     configured: &str,
     env_token: Option<String>,
     missing_err: SyncError,
@@ -49,6 +58,14 @@ fn gitlab_visibility(config: &Config) -> &str {
         "private"
     } else {
         &config.gitlab.visibility
+    }
+}
+
+fn ghe_gist_file_name(config: &Config) -> &str {
+    if config.ghe_gist.file_name.is_empty() {
+        "pet-snippet.toml"
+    } else {
+        &config.ghe_gist.file_name
     }
 }
 
@@ -108,6 +125,76 @@ pub fn run_pull_gist(
 
     let remote = client.get(&config.gist.gist_id)?;
     let remote_file = remote.file(&config.gist.gist_id, file_name)?;
+
+    finish_pull(config, &remote_file.content, yes, confirm)
+}
+
+/// `pet sync push` (GitHub Enterprise Gist backend): same as `run_push_gist`,
+/// against `[GHEGist]` instead of `[Gist]`. GHE's Gist API is documented as
+/// shape-compatible with github.com's, so this reuses `GistClient` — only the
+/// config section, env var, and error variants differ.
+pub fn run_push_ghe_gist(
+    config: &Config,
+    config_path: &Path,
+    client: &impl GistClient,
+) -> Result<()> {
+    resolve_access_token(
+        &config.ghe_gist.access_token,
+        std::env::var("GHE_GIST_TOKEN").ok(),
+        SyncError::GheMissingAccessToken,
+    )?;
+
+    let snippet_path = expand_absolute(&config.general.snippetfile)?;
+    let content = std::fs::read_to_string(&snippet_path)?;
+    let file_name = ghe_gist_file_name(config);
+
+    let info = if config.ghe_gist.gist_id.is_empty() {
+        let info = client.create(file_name, &content, "pet snippets", config.ghe_gist.public)?;
+        let mut updated = config.clone();
+        updated.ghe_gist.gist_id = info.id.clone();
+        updated.save(config_path)?;
+        info
+    } else {
+        client.update(&config.ghe_gist.gist_id, file_name, &content)?
+    };
+
+    println!(
+        "{} {}",
+        "Pushed:".if_supports_color(Stdout, |t| t.bright_green()),
+        info.html_url
+    );
+    Ok(())
+}
+
+/// `pet sync pull` (GitHub Enterprise Gist backend): same as `run_pull_gist`,
+/// against `[GHEGist]` instead of `[Gist]`.
+pub fn run_pull_ghe_gist(
+    config: &Config,
+    client: &impl GistClient,
+    yes: bool,
+    confirm: impl FnOnce(usize, usize) -> Result<bool>,
+) -> Result<()> {
+    resolve_access_token(
+        &config.ghe_gist.access_token,
+        std::env::var("GHE_GIST_TOKEN").ok(),
+        SyncError::GheMissingAccessToken,
+    )?;
+
+    if config.ghe_gist.gist_id.is_empty() {
+        return Err(SyncError::GheMissingGistId.into());
+    }
+    let file_name = ghe_gist_file_name(config);
+
+    let remote = client.get(&config.ghe_gist.gist_id)?;
+    let remote_file =
+        remote
+            .files
+            .get(file_name)
+            .ok_or_else(|| SyncError::GheFileNotFoundInGist {
+                gist_id: config.ghe_gist.gist_id.clone(),
+                file_name: file_name.to_string(),
+                found: remote.files.keys().cloned().collect(),
+            })?;
 
     finish_pull(config, &remote_file.content, yes, confirm)
 }
@@ -331,7 +418,12 @@ mod tests {
                 visibility: "private".to_string(),
                 ..Default::default()
             },
-            ..Default::default()
+            ghe_gist: crate::config::GheGistConfig {
+                access_token: "token".to_string(),
+                file_name: "pet-snippet.toml".to_string(),
+                base_url: "https://ghe.example.com".to_string(),
+                ..Default::default()
+            },
         }
     }
 
@@ -632,5 +724,176 @@ mod tests {
 
         assert!(result.is_err());
         assert!(client.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn ghe_push_creates_a_gist_and_persists_the_returned_id() {
+        let dir = tempdir().unwrap();
+        let config = base_config(dir.path());
+        let config_path = dir.path().join("config.toml");
+        config.save(&config_path).unwrap();
+
+        let client = FakeGistClient {
+            create_result: Some(GistInfo {
+                id: "new-id".to_string(),
+                html_url: "https://ghe.example.com/gist/new-id".to_string(),
+                files: HashMap::new(),
+            }),
+            ..Default::default()
+        };
+
+        run_push_ghe_gist(&config, &config_path, &client).unwrap();
+
+        assert_eq!(*client.calls.borrow(), vec!["create".to_string()]);
+        let reloaded = Config::load(&config_path).unwrap();
+        assert_eq!(reloaded.ghe_gist.gist_id, "new-id");
+        // Only the GHEGist section should have been touched.
+        assert_eq!(reloaded.gist.gist_id, "");
+    }
+
+    #[test]
+    fn ghe_push_updates_an_existing_gist_without_rewriting_config() {
+        let dir = tempdir().unwrap();
+        let mut config = base_config(dir.path());
+        config.ghe_gist.gist_id = "existing-id".to_string();
+        let config_path = dir.path().join("config.toml");
+        config.save(&config_path).unwrap();
+
+        let client = FakeGistClient {
+            update_result: Some(GistInfo {
+                id: "existing-id".to_string(),
+                html_url: "https://ghe.example.com/gist/existing-id".to_string(),
+                files: HashMap::new(),
+            }),
+            ..Default::default()
+        };
+
+        run_push_ghe_gist(&config, &config_path, &client).unwrap();
+
+        assert_eq!(*client.calls.borrow(), vec!["update".to_string()]);
+        let reloaded = Config::load(&config_path).unwrap();
+        assert_eq!(reloaded.ghe_gist.gist_id, "existing-id");
+    }
+
+    fn ghe_gist_with_content(content: &str) -> GistInfo {
+        let mut files = HashMap::new();
+        files.insert(
+            "pet-snippet.toml".to_string(),
+            GistFile {
+                content: content.to_string(),
+            },
+        );
+        GistInfo {
+            id: "existing-id".to_string(),
+            html_url: "https://ghe.example.com/gist/existing-id".to_string(),
+            files,
+        }
+    }
+
+    #[test]
+    fn ghe_pull_refuses_to_write_when_remote_content_is_invalid_toml() {
+        let dir = tempdir().unwrap();
+        let mut config = base_config(dir.path());
+        config.ghe_gist.gist_id = "existing-id".to_string();
+        std::fs::write(&config.general.snippetfile, "original content").unwrap();
+
+        let client = FakeGistClient {
+            get_result: Some(ghe_gist_with_content("not valid toml [[[")),
+            ..Default::default()
+        };
+
+        let result = run_pull_ghe_gist(&config, &client, true, |_, _| {
+            panic!("confirm should not be called before validation succeeds")
+        });
+
+        assert!(result.is_err());
+        let on_disk = std::fs::read_to_string(&config.general.snippetfile).unwrap();
+        assert_eq!(on_disk, "original content");
+    }
+
+    #[test]
+    fn ghe_pull_with_yes_skips_the_confirm_closure() {
+        let dir = tempdir().unwrap();
+        let mut config = base_config(dir.path());
+        config.ghe_gist.gist_id = "existing-id".to_string();
+
+        let client = FakeGistClient {
+            get_result: Some(ghe_gist_with_content(
+                "[[snippets]]\ncommand = \"echo hi\"\n",
+            )),
+            ..Default::default()
+        };
+
+        run_pull_ghe_gist(&config, &client, true, |_, _| {
+            panic!("confirm should not be called when yes=true")
+        })
+        .unwrap();
+
+        let on_disk = std::fs::read_to_string(&config.general.snippetfile).unwrap();
+        assert_eq!(on_disk, "[[snippets]]\ncommand = \"echo hi\"\n");
+    }
+
+    #[test]
+    fn ghe_pull_declining_confirmation_leaves_the_local_file_untouched() {
+        let dir = tempdir().unwrap();
+        let mut config = base_config(dir.path());
+        config.ghe_gist.gist_id = "existing-id".to_string();
+        std::fs::write(&config.general.snippetfile, "original content").unwrap();
+
+        let client = FakeGistClient {
+            get_result: Some(ghe_gist_with_content(
+                "[[snippets]]\ncommand = \"echo hi\"\n",
+            )),
+            ..Default::default()
+        };
+
+        run_pull_ghe_gist(&config, &client, false, |_, _| Ok(false)).unwrap();
+
+        let on_disk = std::fs::read_to_string(&config.general.snippetfile).unwrap();
+        assert_eq!(on_disk, "original content");
+    }
+
+    #[test]
+    fn ghe_pull_missing_id_errors_before_any_network_call() {
+        let dir = tempdir().unwrap();
+        let config = base_config(dir.path());
+        let client = FakeGistClient::default();
+
+        let result = run_pull_ghe_gist(&config, &client, true, |_, _| {
+            panic!("confirm should not be called")
+        });
+
+        assert!(result.is_err());
+        assert!(client.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn ghe_pull_missing_file_lists_found_files() {
+        let dir = tempdir().unwrap();
+        let mut config = base_config(dir.path());
+        config.ghe_gist.gist_id = "existing-id".to_string();
+        config.ghe_gist.file_name = "wrong-name.toml".to_string();
+
+        let client = FakeGistClient {
+            get_result: Some(ghe_gist_with_content(
+                "[[snippets]]\ncommand = \"echo hi\"\n",
+            )),
+            ..Default::default()
+        };
+
+        let err = run_pull_ghe_gist(&config, &client, true, |_, _| Ok(true)).unwrap_err();
+        let sync_err = err.downcast_ref::<SyncError>().expect("expected SyncError");
+        match sync_err {
+            SyncError::GheFileNotFoundInGist {
+                gist_id,
+                file_name,
+                found,
+            } => {
+                assert_eq!(gist_id, "existing-id");
+                assert_eq!(file_name, "wrong-name.toml");
+                assert_eq!(found, &vec!["pet-snippet.toml".to_string()]);
+            }
+            other => panic!("expected GheFileNotFoundInGist, got {other:?}"),
+        }
     }
 }
