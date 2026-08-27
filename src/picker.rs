@@ -287,6 +287,8 @@ fn run_picker_loop(
 /// `pet list --oneline`'s actual value-coloring (the one existing place that
 /// colors values rather than just labels) — description green, command
 /// yellow, tags cyan; literal template text (brackets, separators) neutral.
+/// `$output` isn't in the default `general.format`, so it has no precedent to
+/// match — magenta, distinct from the other three.
 fn field_color(fields: &[(FieldRole, Range<usize>)], ci: usize) -> ratatui::style::Color {
     use ratatui::style::Color;
 
@@ -296,6 +298,7 @@ fn field_color(fields: &[(FieldRole, Range<usize>)], ci: usize) -> ratatui::styl
                 FieldRole::Description => Color::LightGreen,
                 FieldRole::Command => Color::LightYellow,
                 FieldRole::Tags => Color::LightCyan,
+                FieldRole::Output => Color::LightMagenta,
             };
         }
     }
@@ -679,6 +682,30 @@ mod tests {
         assert_eq!(fg_at(4), Color::LightGreen, "'g' starts the description");
         assert_eq!(fg_at(12), Color::LightYellow, "'e' starts the command");
         assert_eq!(fg_at(20), Color::LightCyan, "'#' starts the tags");
+    }
+
+    #[test]
+    fn render_colors_output_distinctly_when_present_in_the_format() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        use ratatui::style::Color;
+
+        // $output isn't in the default general.format, so this only shows up
+        // when a user opts in to it — confirm it still gets its own color.
+        let item = PickerItem {
+            text: "[greet]: ok".to_string(),
+            fields: vec![(FieldRole::Description, 1..6), (FieldRole::Output, 9..11)],
+        };
+        let state = PickerState::new(vec![item], "");
+        let backend = TestBackend::new(70, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, &state)).unwrap();
+        let buf = terminal.backend().buffer();
+
+        // Column = 1 (list border) + 2 (marker) + char index (same offset the
+        // test above uses).
+        let fg_at = |x: u16| buf[(x, 4)].fg;
+        assert_eq!(fg_at(12), Color::LightMagenta, "'o' starts the output");
     }
 
     #[test]

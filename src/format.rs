@@ -6,6 +6,7 @@ pub enum FieldRole {
     Description,
     Command,
     Tags,
+    Output,
 }
 
 /// Same substitution as `render_template`, but instead of optionally embedding
@@ -19,15 +20,17 @@ pub fn render_template_fields(
     description: &str,
     command: &str,
     tags: &[String],
+    output: &str,
 ) -> (String, Vec<(FieldRole, std::ops::Range<usize>)>) {
     let flattened_command = command.replace('\n', "\\n");
+    let flattened_output = output.replace('\n', "\\n");
     let tags_str = tags.iter().map(|t| format!("#{t} ")).collect::<String>();
 
     // Position each placeholder actually appears at in `format` (first
     // occurrence only, matching `render_template`'s `replacen(..., 1)`), then
     // walk them in that order so the output — and each field's range within it
     // — comes out right regardless of how the user has arranged `format`.
-    let mut placeholders: Vec<(usize, &str, FieldRole, &str)> = Vec::with_capacity(3);
+    let mut placeholders: Vec<(usize, &str, FieldRole, &str)> = Vec::with_capacity(4);
     if let Some(pos) = format.find("$description") {
         placeholders.push((pos, "$description", FieldRole::Description, description));
     }
@@ -42,9 +45,12 @@ pub fn render_template_fields(
     if let Some(pos) = format.find("$tags") {
         placeholders.push((pos, "$tags", FieldRole::Tags, tags_str.as_str()));
     }
+    if let Some(pos) = format.find("$output") {
+        placeholders.push((pos, "$output", FieldRole::Output, flattened_output.as_str()));
+    }
     placeholders.sort_by_key(|(pos, ..)| *pos);
 
-    let mut output = String::new();
+    let mut rendered = String::new();
     let mut fields = Vec::with_capacity(placeholders.len());
     let mut cursor = 0;
 
@@ -56,21 +62,24 @@ pub fn render_template_fields(
             // literal text rather than double-counting.
             continue;
         }
-        output.push_str(&format[cursor..pos]);
-        let start = output.chars().count();
-        output.push_str(value);
-        let end = output.chars().count();
+        rendered.push_str(&format[cursor..pos]);
+        let start = rendered.chars().count();
+        rendered.push_str(value);
+        let end = rendered.chars().count();
         fields.push((role, start..end));
         cursor = pos + marker.len();
     }
-    output.push_str(&format[cursor..]);
+    rendered.push_str(&format[cursor..]);
 
-    (output, fields)
+    (rendered, fields)
 }
 
 /// Render the `format` config template ("[$description]: $command $tags") for a
 /// single snippet, used to build the searchable text handed to the selector.
-/// Multiline commands are flattened to a literal `\n` so each snippet stays one line.
+/// Multiline commands (and `$output`, if present in the template) are flattened
+/// to a literal `\n` so each snippet stays one line. `$output` isn't in the
+/// default template — it's opt-in, since captured command output can be long
+/// and most users don't want it cluttering every row.
 ///
 /// `color`, when true, wraps `$description`/`$tags` in ANSI color codes
 /// unconditionally (no TTY check — this text is piped to the selector, e.g. fzf's
@@ -82,11 +91,13 @@ pub fn render_template(
     description: &str,
     command: &str,
     tags: &[String],
+    output: &str,
     color: bool,
 ) -> String {
     use owo_colors::OwoColorize;
 
     let flattened_command = command.replace('\n', "\\n");
+    let flattened_output = output.replace('\n', "\\n");
     let tags_str = tags.iter().map(|t| format!("#{t} ")).collect::<String>();
 
     let (description, tags_str) = if color {
@@ -102,6 +113,7 @@ pub fn render_template(
         .replacen("$description", &description, 1)
         .replacen("$command", &flattened_command, 1)
         .replacen("$tags", &tags_str, 1)
+        .replacen("$output", &flattened_output, 1)
 }
 
 /// Truncate `s` to at most `width` characters (appending "..." if truncated and
@@ -132,7 +144,7 @@ mod tests {
 
     #[test]
     fn render_template_substitutes_all_placeholders() {
-        let out = render_template("[$description]: $command $tags", "d", "c", &[], false);
+        let out = render_template("[$description]: $command $tags", "d", "c", &[], "", false);
         assert_eq!(out, "[d]: c ");
     }
 
@@ -145,6 +157,7 @@ mod tests {
             "d",
             "c",
             &["t".to_string()],
+            "",
             true,
         );
         // Command stays plain; description/tags get ANSI codes unconditionally
@@ -156,18 +169,26 @@ mod tests {
     }
 
     #[test]
+    fn render_template_substitutes_output_and_flattens_newlines() {
+        let out = render_template("$output", "d", "c", &[], "line1\nline2", false);
+        assert_eq!(out, "line1\\nline2");
+    }
+
+    #[test]
     fn render_template_fields_matches_render_template_plain_output() {
         let (text, _) = render_template_fields(
             "[$description]: $command $tags",
             "d",
             "c",
             &["t".to_string()],
+            "",
         );
         let plain = render_template(
             "[$description]: $command $tags",
             "d",
             "c",
             &["t".to_string()],
+            "",
             false,
         );
         assert_eq!(text, plain);
@@ -185,6 +206,7 @@ mod tests {
             "greet",
             "echo hi",
             &["demo".to_string()],
+            "",
         );
         assert_eq!(text, "[greet]: echo hi #demo ");
 
@@ -208,10 +230,23 @@ mod tests {
     }
 
     #[test]
+    fn render_template_fields_reports_output_range_and_flattens_newlines() {
+        let (text, fields) =
+            render_template_fields("$description: $output", "d", "c", &[], "l1\nl2");
+        assert_eq!(text, "d: l1\\nl2");
+
+        let output = fields
+            .iter()
+            .find(|(role, _)| *role == FieldRole::Output)
+            .unwrap();
+        assert_eq!(&text[output.1.start..output.1.end], "l1\\nl2");
+    }
+
+    #[test]
     fn render_template_fields_uses_char_indices_not_byte_offsets() {
         // "héllo" has a 2-byte 'é', so a byte-index range would land wrong here —
         // this only passes if ranges are counted in chars.
-        let (text, fields) = render_template_fields("<$description>", "héllo", "", &[]);
+        let (text, fields) = render_template_fields("<$description>", "héllo", "", &[], "");
         let (_, range) = &fields[0];
         assert_eq!(*range, 1..6);
         let collected: String = text
@@ -229,6 +264,7 @@ mod tests {
             "d",
             "c",
             &["t".to_string()],
+            "",
         );
         assert_eq!(text, "#t  | c | d");
 
@@ -243,13 +279,14 @@ mod tests {
                 FieldRole::Tags => assert_eq!(slice, "#t "),
                 FieldRole::Command => assert_eq!(slice, "c"),
                 FieldRole::Description => assert_eq!(slice, "d"),
+                FieldRole::Output => panic!("no $output in this template"),
             }
         }
     }
 
     #[test]
     fn render_template_fields_omits_missing_placeholders() {
-        let (text, fields) = render_template_fields("$description: $command", "d", "c", &[]);
+        let (text, fields) = render_template_fields("$description: $command", "d", "c", &[], "");
         assert_eq!(text, "d: c");
         let roles: Vec<FieldRole> = fields.iter().map(|(role, _)| *role).collect();
         assert_eq!(roles, vec![FieldRole::Description, FieldRole::Command]);

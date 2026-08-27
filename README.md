@@ -76,8 +76,9 @@ When `selectcmd` is `builtin` (the default for new configs), selection opens
 a full-screen fuzzy finder:
 
 - Description, command, and tags are colored distinctly (green/yellow/cyan)
-  in every row, and matched characters are bolded and underlined on top of
-  that as you type
+  in every row — output too (magenta), if you've added `$output` to
+  `general.format` — and matched characters are bolded and underlined on top
+  of that as you type
 - Type to filter — matches are scored and sorted like `fzf`'s
 - `↑`/`↓` move focus, wrapping at either end
 - `Tab` toggles the focused snippet for multi-select and advances
@@ -304,7 +305,7 @@ directly with `--config`. It's created for you on first run.
   selectcmd = "builtin"            # "builtin" for the native picker (default for new configs), or an external command, e.g. "fzf --ansi --layout=reverse --border --height=90% --pointer=* --cycle --prompt=Snippets:"
   sortby = ""                      # recency (default) | -recency | description | -description | command | -command | output | -output | usage | -usage
   cmd = ["sh", "-c"]                # shell used to run selectcmd/editor/exec
-  format = "[$description]: $command $tags"   # how snippets are displayed to the selector
+  format = "[$description]: $command $tags"   # how snippets are displayed to the selector; also accepts $output (not included by default)
   color = true                     # colorize description/tags in the selector list, same as --color (default: true for new configs; set false to disable)
   backend = "gist"                 # sync backend for `pet sync push`/`pet sync pull`: "gist", "gitlab", or "ghe"
 

@@ -46,8 +46,13 @@ pub fn select_snippets(
         let items: Vec<PickerItem> = snippets
             .iter()
             .map(|s| {
-                let (text, fields) =
-                    render_template_fields(&general.format, &s.description, &s.command, &s.tag);
+                let (text, fields) = render_template_fields(
+                    &general.format,
+                    &s.description,
+                    &s.command,
+                    &s.tag,
+                    &s.output,
+                );
                 PickerItem { text, fields }
             })
             .collect();
@@ -60,10 +65,23 @@ pub fn select_snippets(
     let mut items = Vec::with_capacity(snippets.len());
 
     for s in snippets {
-        let plain = render_template(&general.format, &s.description, &s.command, &s.tag, false);
+        let plain = render_template(
+            &general.format,
+            &s.description,
+            &s.command,
+            &s.tag,
+            &s.output,
+            false,
+        );
         if color {
-            let colored =
-                render_template(&general.format, &s.description, &s.command, &s.tag, true);
+            let colored = render_template(
+                &general.format,
+                &s.description,
+                &s.command,
+                &s.tag,
+                &s.output,
+                true,
+            );
             items.push(colored.clone());
             // fzf's `--ansi` (the default selectcmd) strips color codes from the
             // line it hands back on selection, so the returned text matches
@@ -119,6 +137,7 @@ pub fn select_file(
                     &s.description,
                     &s.command,
                     &s.tag,
+                    "",
                 );
                 PickerItem { text, fields }
             })
@@ -234,6 +253,33 @@ mod tests {
     #[test]
     fn shell_quote_escapes_embedded_single_quotes() {
         assert_eq!(shell_quote("it's"), r"'it'\''s'");
+    }
+
+    #[test]
+    fn select_snippets_resolves_output_when_the_format_opts_in() {
+        // $output isn't in the default format, so this proves a user who adds
+        // it to general.format actually gets it substituted through the whole
+        // select_snippets path, not just at the format.rs unit level.
+        let general = GeneralConfig {
+            selectcmd: "cat".to_string(),
+            format: "[$description]: $command ($output)".to_string(),
+            ..GeneralConfig::default()
+        };
+        let snippet = SnippetInfo {
+            filename: Default::default(),
+            description: "greet".to_string(),
+            command: "echo hi".to_string(),
+            tag: vec![],
+            output: "hi".to_string(),
+        };
+
+        let result = select_snippets(
+            &general,
+            std::slice::from_ref(&snippet),
+            &SelectOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(result, vec![snippet]);
     }
 
     #[test]
