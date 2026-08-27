@@ -125,4 +125,33 @@ pub enum SyncError {
         expected: String,
         found: Vec<String>,
     },
+
+    #[error(
+        "no GHE Gist access token configured\nPlease run 'pet configure' and set access_token under [GHEGist] (a GitHub Enterprise personal access token with the 'gist' scope), or set the GHE_GIST_TOKEN environment variable"
+    )]
+    GheMissingAccessToken,
+    #[error(
+        "no gist_id configured under [GHEGist], nothing to pull yet\nRun 'pet sync push' first to create a gist, or set gist_id under [GHEGist] in config.toml if you already have one"
+    )]
+    GheMissingGistId,
+    #[error(
+        "GitHub Enterprise rejected the access token (401 Unauthorized) — check access_token under [GHEGist] (needs the 'gist' scope) or GHE_GIST_TOKEN"
+    )]
+    GheUnauthorized,
+    #[error(
+        "gist {0} not found on this GitHub Enterprise instance (404) — check gist_id under [GHEGist], or that the token has access to it"
+    )]
+    GheGistNotFound(String),
+    #[error(
+        "gist {gist_id} has no file named \"{file_name}\" (found: {found:?}) — check file_name under [GHEGist]"
+    )]
+    GheFileNotFoundInGist {
+        gist_id: String,
+        file_name: String,
+        found: Vec<String>,
+    },
+    #[error(
+        "gist file \"{0}\" was truncated by the GitHub Enterprise API (the file is too large to fetch in full) — refusing to pull a partial snippet file"
+    )]
+    GheTruncated(String),
 }

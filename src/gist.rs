@@ -58,13 +58,23 @@ impl GistInfo {
 
 const GITHUB_API_BASE: &str = "https://api.github.com";
 
+/// Which product this client is talking to — same API shape (GitHub
+/// Enterprise's Gist API is documented as compatible with github.com's), but
+/// error text needs to point at the right config section (`[Gist]` vs.
+/// `[GHEGist]`) and env var (`GITHUB_TOKEN` vs. `GHE_GIST_TOKEN`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backend {
+    Github,
+    Ghe,
+}
+
 /// Real GitHub Gist API v3 client, backed by `ureq` (blocking, no async runtime —
-/// matches the rest of this codebase). `base_url` defaults to `GITHUB_API_BASE`
-/// but can be overridden via the `GIST_API_BASE_URL` env var (wired in `main.rs`)
-/// to point at a mock server, e.g. for future integration tests.
+/// matches the rest of this codebase). Also serves GitHub Enterprise's Gist API
+/// (same shape, different base URL) via `ghe()` — see `Backend`.
 pub struct GistApiClient {
     base_url: String,
     access_token: String,
+    backend: Backend,
 }
 
 impl GistApiClient {
@@ -72,15 +82,34 @@ impl GistApiClient {
         Self::with_base_url(access_token, GITHUB_API_BASE.to_string())
     }
 
+    /// `base_url` defaults to `GITHUB_API_BASE` but can be overridden via the
+    /// `GIST_API_BASE_URL` env var (wired in `main.rs`) to point at a mock
+    /// server, e.g. for integration tests.
     pub fn with_base_url(access_token: String, base_url: String) -> Self {
         GistApiClient {
-            base_url,
+            base_url: normalize_base_url(base_url),
             access_token,
+            backend: Backend::Github,
+        }
+    }
+
+    /// A GitHub Enterprise instance's Gist API, at `<base_url>/api/v3` — e.g.
+    /// `https://ghe.example.com`. Errors are labeled for `[GHEGist]`/
+    /// `GHE_GIST_TOKEN` instead of `[Gist]`/`GITHUB_TOKEN`.
+    pub fn ghe(access_token: String, base_url: String) -> Self {
+        GistApiClient {
+            base_url: normalize_base_url(base_url),
+            access_token,
+            backend: Backend::Ghe,
         }
     }
 
     fn request(&self, method: &str, path: &str) -> ureq::Request {
-        ureq::request(method, &format!("{}{}", self.base_url, path))
+        let api_base = match self.backend {
+            Backend::Github => self.base_url.clone(),
+            Backend::Ghe => format!("{}/api/v3", self.base_url),
+        };
+        ureq::request(method, &format!("{api_base}{path}"))
             .set("Authorization", &format!("Bearer {}", self.access_token))
             .set("Accept", "application/vnd.github+json")
             .set("X-GitHub-Api-Version", "2022-11-28")
@@ -88,16 +117,23 @@ impl GistApiClient {
     }
 
     fn send(
+        &self,
         resp: Result<ureq::Response, ureq::Error>,
         gist_id_for_404: Option<&str>,
     ) -> Result<GistInfo, SyncError> {
         let resp = match resp {
             Ok(r) => r,
-            Err(ureq::Error::Status(401, _)) => return Err(SyncError::Unauthorized),
+            Err(ureq::Error::Status(401, _)) => {
+                return Err(match self.backend {
+                    Backend::Github => SyncError::Unauthorized,
+                    Backend::Ghe => SyncError::GheUnauthorized,
+                });
+            }
             Err(ureq::Error::Status(404, _)) => {
-                return Err(match gist_id_for_404 {
-                    Some(id) => SyncError::GistNotFound(id.to_string()),
-                    None => SyncError::UnexpectedStatus {
+                return Err(match (gist_id_for_404, self.backend) {
+                    (Some(id), Backend::Github) => SyncError::GistNotFound(id.to_string()),
+                    (Some(id), Backend::Ghe) => SyncError::GheGistNotFound(id.to_string()),
+                    (None, _) => SyncError::UnexpectedStatus {
                         status: 404,
                         body: String::new(),
                     },
@@ -111,7 +147,7 @@ impl GistApiClient {
         };
 
         let body: GistApiResponse = resp.into_json()?;
-        body.try_into()
+        body.into_gist_info(self.backend)
     }
 }
 
@@ -136,7 +172,7 @@ impl GistClient for GistApiClient {
         let resp = self
             .request("POST", "/gists")
             .send_json(serde_json::to_value(&body)?);
-        Self::send(resp, None)
+        self.send(resp, None)
     }
 
     fn update(&self, gist_id: &str, file_name: &str, content: &str) -> Result<GistInfo, SyncError> {
@@ -151,13 +187,17 @@ impl GistClient for GistApiClient {
         let resp = self
             .request("PATCH", &format!("/gists/{gist_id}"))
             .send_json(serde_json::to_value(&body)?);
-        Self::send(resp, Some(gist_id))
+        self.send(resp, Some(gist_id))
     }
 
     fn get(&self, gist_id: &str) -> Result<GistInfo, SyncError> {
         let resp = self.request("GET", &format!("/gists/{gist_id}")).call();
-        Self::send(resp, Some(gist_id))
+        self.send(resp, Some(gist_id))
     }
+}
+
+fn normalize_base_url(base_url: String) -> String {
+    base_url.trim_end_matches('/').to_string()
 }
 
 #[derive(Serialize)]
@@ -191,17 +231,18 @@ struct GistApiFile {
     truncated: bool,
 }
 
-impl TryFrom<GistApiResponse> for GistInfo {
-    type Error = SyncError;
-
-    fn try_from(resp: GistApiResponse) -> Result<Self, SyncError> {
-        if let Some((name, _)) = resp.files.iter().find(|(_, f)| f.truncated) {
-            return Err(SyncError::Truncated(name.clone()));
+impl GistApiResponse {
+    fn into_gist_info(self, backend: Backend) -> Result<GistInfo, SyncError> {
+        if let Some((name, _)) = self.files.iter().find(|(_, f)| f.truncated) {
+            return Err(match backend {
+                Backend::Github => SyncError::Truncated(name.clone()),
+                Backend::Ghe => SyncError::GheTruncated(name.clone()),
+            });
         }
         Ok(GistInfo {
-            id: resp.id,
-            html_url: resp.html_url,
-            files: resp
+            id: self.id,
+            html_url: self.html_url,
+            files: self
                 .files
                 .into_iter()
                 .map(|(name, f)| (name, GistFile { content: f.content }))
