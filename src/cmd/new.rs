@@ -1,16 +1,24 @@
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::{Result, bail};
 use dialoguer::Input;
 use owo_colors::{OwoColorize, Stream::Stdout};
 
 use crate::config::Config;
+use crate::dialog;
 use crate::editor;
 use crate::error::SnippetError;
 use crate::history;
 use crate::path::expand_absolute;
+use crate::shell::{self, CaptureOutcome};
 use crate::snippet::{SnippetInfo, Snippets};
+
+/// How long `-o`/`--capture-output` waits for the command to finish before
+/// giving up and continuing without output. Fixed rather than configurable —
+/// narrow enough a use case not to need its own config field.
+const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct NewOptions {
     pub command_args: Vec<String>,
@@ -18,6 +26,7 @@ pub struct NewOptions {
     pub multiline: bool,
     pub use_editor: bool,
     pub use_last: bool,
+    pub capture_output: bool,
 }
 
 pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
@@ -59,6 +68,13 @@ pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
         scan("Command> ", false)?
     };
 
+    let captured = resolve_output_capture(opts.capture_output, &command, || {
+        shell::capture_stdout(&config.general, &command, CAPTURE_TIMEOUT)
+    });
+    if let Some(message) = &captured.message {
+        println!("{message}");
+    }
+
     let description = scan("Description> ", false)?;
 
     let tag = if opts.prompt_tag {
@@ -85,11 +101,67 @@ pub fn run(config: &Config, opts: NewOptions) -> Result<()> {
         description,
         command,
         tag,
-        output: String::new(),
+        output: captured.text,
     });
     snippets.save(&config.general)?;
 
     Ok(())
+}
+
+struct CapturedOutput {
+    text: String,
+    message: Option<String>,
+}
+
+/// Decide a new snippet's `output` field for `-o`/`--capture-output`.
+/// `run_capture` is injected (production calls `shell::capture_stdout`; tests
+/// pass a canned outcome or a panic-if-called closure) so this decision logic
+/// — whether to attempt capture at all, and how each outcome maps to the
+/// stored text and the message shown to the user — is testable without
+/// spawning a real process. Capture failing (in any way) never blocks snippet
+/// creation; it just leaves `output` empty.
+fn resolve_output_capture(
+    capture_output: bool,
+    command: &str,
+    run_capture: impl FnOnce() -> io::Result<CaptureOutcome>,
+) -> CapturedOutput {
+    if !capture_output {
+        return CapturedOutput {
+            text: String::new(),
+            message: None,
+        };
+    }
+
+    if !dialog::extract_params(command).is_empty() {
+        return CapturedOutput {
+            text: String::new(),
+            message: Some(
+                "Skipping output capture: command has <param> placeholder(s)".to_string(),
+            ),
+        };
+    }
+
+    match run_capture() {
+        Ok(CaptureOutcome::Captured(text)) => CapturedOutput {
+            text,
+            message: Some("Captured command output.".to_string()),
+        },
+        Ok(CaptureOutcome::Failed(status)) => CapturedOutput {
+            text: String::new(),
+            message: Some(format!("Command failed ({status}), output not captured.")),
+        },
+        Ok(CaptureOutcome::TimedOut) => CapturedOutput {
+            text: String::new(),
+            message: Some(format!(
+                "Command timed out after {}s, output not captured.",
+                CAPTURE_TIMEOUT.as_secs()
+            )),
+        },
+        Err(err) => CapturedOutput {
+            text: String::new(),
+            message: Some(format!("Failed to run command: {err}")),
+        },
+    }
 }
 
 /// Prompt for a line of input. Uses a rich interactive prompt when stdin is a real
@@ -275,5 +347,60 @@ mod tests {
     fn single_line_command_needs_only_one_double_blank() {
         let result = run_lines(&["echo hi", "", ""]);
         assert_eq!(result, Some("echo hi".to_string()));
+    }
+
+    #[test]
+    fn resolve_output_capture_disabled_never_calls_run_capture() {
+        let result = resolve_output_capture(false, "echo hi", || {
+            panic!("run_capture should not be called when capture_output is false")
+        });
+        assert_eq!(result.text, "");
+        assert!(result.message.is_none());
+    }
+
+    #[test]
+    fn resolve_output_capture_skips_commands_with_params() {
+        let result = resolve_output_capture(true, "echo <name>", || {
+            panic!("run_capture should not be called for a parameterized command")
+        });
+        assert_eq!(result.text, "");
+        assert!(result.message.unwrap().contains("<param>"));
+    }
+
+    #[test]
+    fn resolve_output_capture_stores_captured_text() {
+        let result = resolve_output_capture(true, "echo hi", || {
+            Ok(CaptureOutcome::Captured("hi\n".to_string()))
+        });
+        assert_eq!(result.text, "hi\n");
+        assert!(result.message.is_some());
+    }
+
+    #[test]
+    fn resolve_output_capture_failed_status_leaves_output_empty() {
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("exit 1")
+            .status()
+            .unwrap();
+        let result = resolve_output_capture(true, "false", || Ok(CaptureOutcome::Failed(status)));
+        assert_eq!(result.text, "");
+        assert!(result.message.unwrap().contains("Command failed"));
+    }
+
+    #[test]
+    fn resolve_output_capture_timed_out_leaves_output_empty() {
+        let result = resolve_output_capture(true, "sleep 100", || Ok(CaptureOutcome::TimedOut));
+        assert_eq!(result.text, "");
+        assert!(result.message.unwrap().contains("timed out"));
+    }
+
+    #[test]
+    fn resolve_output_capture_io_error_leaves_output_empty() {
+        let result = resolve_output_capture(true, "nonexistent-binary", || {
+            Err(io::Error::other("spawn failed"))
+        });
+        assert_eq!(result.text, "");
+        assert!(result.message.unwrap().contains("Failed to run command"));
     }
 }

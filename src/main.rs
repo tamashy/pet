@@ -43,6 +43,7 @@ fn run() -> Result<()> {
             multiline,
             editor,
             last,
+            capture_output,
         } => {
             cmd::new::run(
                 &cfg,
@@ -52,6 +53,7 @@ fn run() -> Result<()> {
                     multiline,
                     use_editor: editor,
                     use_last: last,
+                    capture_output,
                 },
             )?;
         }

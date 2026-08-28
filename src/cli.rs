@@ -39,6 +39,11 @@ pub enum Commands {
         /// history file, instead of prompting for it
         #[arg(short = 'l', long = "last", conflicts_with_all = ["command", "multiline", "editor"])]
         last: bool,
+
+        /// Run the command and capture its stdout into the snippet's output
+        /// field (skipped, with a warning, for a command with <param> placeholders)
+        #[arg(short = 'o', long = "capture-output", conflicts_with = "editor")]
+        capture_output: bool,
     },
     /// Show all snippets
     List {

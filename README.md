@@ -36,6 +36,8 @@ search — without digging through shell history or a notes file.
   predate the current field-casing conventions
 - Sync your snippet file to a GitHub Gist, a GitLab snippet, or a GitHub
   Enterprise gist (`pet sync push`/`pet sync pull`)
+- Capture a command's real output when saving it (`pet new -o`), and show it
+  in the picker/selector by adding `$output` to `general.format`
 
 ## Installation
 
@@ -160,6 +162,7 @@ pet new -t                    # also prompts for tags
 pet new -m                    # multiline command (blank line twice to finish)
 pet new -e                    # skip prompts, open $EDITOR on a blank entry instead
 pet new -l                    # use the previous shell command (read from history) instead of prompting for it
+pet new -o echo hi            # run the command, capture its stdout into the snippet's output field
 ```
 
 `-l`/`--last` reads your shell's history file directly (`$HISTFILE`, or the
@@ -167,6 +170,25 @@ default location for `$SHELL`) rather than needing a wrapper shell function.
 On shells that only flush history to disk periodically (e.g. plain bash
 without `history -a` in `PROMPT_COMMAND`), the previous command may not be on
 disk yet when `pet new -l` runs.
+
+`-o`/`--capture-output` runs the finished command for real and stores its
+stdout in the snippet's `output` field. Stderr is discarded, and stdin is
+closed so a command that reads from it can't hang. It waits up to 10
+seconds, then kills the command and gives up; captured output is capped at
+4KB. Only use `-o` on commands safe to run right now, since it genuinely
+executes them.
+
+A command that doesn't exit on its own (`ping` without `-c`, `tail -f`, a
+server, anything meant to be interrupted by hand) always hits the 10-second
+timeout. Running it outside `pet` "works" only because you're the one
+watching it and pressing Ctrl-C. Give `-o` a command that finishes instead
+(`ping -c 1 host`, not `ping host`).
+
+A command with a `<param>` placeholder has no real value to run with, so
+`pet new` skips capture there and prints a warning instead of failing. The
+snippet still gets saved, just without output. `output` isn't shown
+anywhere by default; add `$output` to `general.format` (see Configuration)
+to see it in the picker/selector, or check `pet list`.
 
 ### `pet list`
 
