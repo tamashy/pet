@@ -117,6 +117,24 @@ fn param_refs(default: &str) -> Vec<String> {
     refs
 }
 
+/// Same as `param_refs`, but unioned (deduped, first-seen order) across every
+/// option of a pipe-delimited multi-default — needed because a multi-default's
+/// options are evaluated independently at selection time (see `Field::new`'s
+/// `Options` branch), so the field as a whole depends on whichever names *any*
+/// option references, not just the one currently selected.
+fn param_refs_multi(options: &[String]) -> Vec<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut refs = Vec::new();
+    for option in options {
+        for name in param_refs(option) {
+            if seen.insert(name.clone()) {
+                refs.push(name);
+            }
+        }
+    }
+    refs
+}
+
 /// Replace every `<name>` / `<name=default>` occurrence in `command` with its
 /// resolved value from `values` (missing entries substitute as empty, matching Go's
 /// zero-value map access in `dialog.insertParams`). Uses the same `COMBINED_RE` as
@@ -170,17 +188,28 @@ pub enum FieldKind {
 
 /// A field whose default embeds `<ref>` tokens (see `REF_RE`) naming other fields.
 /// While `overridden` is false, the field's displayed/resolved value is
-/// `raw` re-interpolated against the referenced fields' *current* values on every
-/// render/resolve — see `DialogState::values` — so it tracks them live.
+/// re-interpolated against the referenced fields' *current* values on every
+/// render/resolve — see `DialogState::values` — so it tracks them live. Attaches to
+/// either `FieldKind`: for `Text`, the source of truth is `raw` (the buffer itself
+/// stays empty until the user types, see `Field::new`); for `Options`, each option
+/// string is its own raw template and `raw` here is unused (left empty) — see
+/// `DialogState::values`, which picks `options[selected]` directly in that case.
+/// `Options` fields never reach `overridden = true` in practice: they have no
+/// free-text entry to trigger it (see `materialize_if_templated`), only cycling,
+/// which re-interpolates on every render regardless of which option is selected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldTemplate {
     /// The raw default text, verbatim, with embedded `<ref>` tokens intact.
+    /// Meaningful only for a `Text` field's template — see the struct docs.
     raw: String,
-    /// Names this field's `raw` references, deduped, first-seen order.
+    /// Names this field depends on (its `Text` `raw`, or the union across all
+    /// `Options` option strings — see `param_refs_multi`), deduped, first-seen
+    /// order.
     depends_on: Vec<String>,
     /// Set once the user edits this field directly (any of `Char`/`Backspace`/
     /// `Delete`) — from then on it behaves exactly like a plain `Text` field and
-    /// permanently stops tracking its references. See `handle_key`.
+    /// permanently stops tracking its references. See `handle_key`. Only reachable
+    /// for `Text` fields — see the struct docs.
     overridden: bool,
 }
 
@@ -193,9 +222,10 @@ pub struct Field {
     /// empty — Go pet never enforces this (an empty value substitutes as ""), so
     /// this is advisory styling only, not validation.
     has_default: bool,
-    /// `Some` only for a `FieldKind::Text` field whose default embedded a
-    /// reference to another field (mutually exclusive with `FieldKind::Options` —
-    /// `parse_options` is tried first, unchanged precedence) and that isn't
+    /// `Some` when this field's default (a `FieldKind::Text` default, or any
+    /// option of a `FieldKind::Options` multi-default — `parse_options` is tried
+    /// first, unchanged precedence, then each branch separately checks for
+    /// embedded refs) embedded a reference to another field, and that isn't
     /// currently part of a dependency cycle (see `dependency_order`, which strips
     /// this back to `None` for cycle-involved fields).
     template: Option<FieldTemplate>,
@@ -205,15 +235,27 @@ impl Field {
     fn new(param: &Param) -> Self {
         let has_default = !param.default.is_empty();
         match parse_options(&param.default) {
-            Some(options) => Field {
-                name: param.name.clone(),
-                kind: FieldKind::Options {
-                    options,
-                    selected: 0,
-                },
-                has_default,
-                template: None,
-            },
+            Some(options) => {
+                let depends_on = param_refs_multi(&options);
+                let template = if depends_on.is_empty() {
+                    None
+                } else {
+                    Some(FieldTemplate {
+                        raw: String::new(),
+                        depends_on,
+                        overridden: false,
+                    })
+                };
+                Field {
+                    name: param.name.clone(),
+                    kind: FieldKind::Options {
+                        options,
+                        selected: 0,
+                    },
+                    has_default,
+                    template,
+                }
+            }
             None => {
                 let depends_on = param_refs(&param.default);
                 if depends_on.is_empty() {
@@ -292,13 +334,22 @@ impl DialogState {
     /// value is its raw default re-interpolated against the other fields'
     /// (already-resolved, per `recompute_order`) current values — so this reflects
     /// live edits/cycling of the fields it depends on, not just its original
-    /// default. Everything else is `Field::current_value` as before.
+    /// default. For `Text`, the raw default is `template.raw`; for `Options`, it's
+    /// whichever option is currently selected (each option is its own template —
+    /// see `FieldTemplate`'s docs). Everything else is `Field::current_value` as
+    /// before.
     pub fn values(&self) -> HashMap<String, String> {
         let mut resolved: HashMap<String, String> = HashMap::with_capacity(self.fields.len());
         for &i in &self.recompute_order {
             let field = &self.fields[i];
             let value = match &field.template {
-                Some(t) if !t.overridden => interpolate(&t.raw, &resolved),
+                Some(t) if !t.overridden => {
+                    let raw: &str = match &field.kind {
+                        FieldKind::Options { options, selected } => &options[*selected],
+                        FieldKind::Text { .. } => &t.raw,
+                    };
+                    interpolate(raw, &resolved)
+                }
                 _ => field.current_value(),
             };
             resolved.insert(field.name.clone(), value);
@@ -370,9 +421,15 @@ fn dependency_order(fields: &mut [Field]) -> Vec<usize> {
                 continue;
             }
             if let Some(template) = field.template.take() {
-                let buffer = template.raw;
-                let cursor = buffer.chars().count();
-                field.kind = FieldKind::Text { buffer, cursor };
+                // Only a `Text` field's `raw` is meaningful here (see
+                // `FieldTemplate`'s docs) — an `Options` field just drops its
+                // template and keeps its options as-is, each showing its own
+                // raw, un-interpolated literal text.
+                if let FieldKind::Text { .. } = &field.kind {
+                    let buffer = template.raw;
+                    let cursor = buffer.chars().count();
+                    field.kind = FieldKind::Text { buffer, cursor };
+                }
             }
             order.push(i);
         }
@@ -436,17 +493,23 @@ fn is_editing_key(code: crossterm::event::KeyCode) -> bool {
     )
 }
 
-/// If the focused field is a not-yet-overridden templated field, freeze its
+/// If the focused field is a not-yet-overridden templated `Text` field, freeze its
 /// current live-interpolated value into `buffer` and mark it `overridden` — from
 /// this point on it's indistinguishable from a plain `Text` field and permanently
 /// stops tracking the fields it used to reference. Called once, right before an
 /// editing key is applied, so the field the user is about to type into always
 /// starts from what they can currently see rather than snapping back to the raw
-/// template text.
+/// template text. `Options` fields never have free-text entry (editing keys are
+/// no-ops for them — see `apply_key_to_field`), so they're excluded here too:
+/// otherwise an editing keypress landing on a focused `Options` field would
+/// permanently freeze it as `overridden` without actually changing anything.
 fn materialize_if_templated(state: &mut DialogState) {
     let Some(field) = state.fields.get(state.focus) else {
         return;
     };
+    if !matches!(&field.kind, FieldKind::Text { .. }) {
+        return;
+    }
     if !matches!(&field.template, Some(t) if !t.overridden) {
         return;
     }
@@ -1381,5 +1444,90 @@ mod tests {
         assert!(state.fields.iter().all(|f| f.template.is_none()));
         assert_eq!(state.values().get("a").map(String::as_str), Some("<b>"));
         assert_eq!(state.values().get("b").map(String::as_str), Some("<a>"));
+    }
+
+    // Regression: an `Options` multi-default where only *some* options embed a
+    // `<ref>` (e.g. `<role=|_devops_support_||_myrole-<env>-myaccount_|>`
+    // alongside `<env=|_dev_||_prod_||_stage_|>`). Previously `Field::new` only
+    // ever attached a `template` to `Text` fields, so an `Options` field's embedded
+    // refs were never interpolated at all — selecting the referencing option left
+    // the literal `<env>` token in the resolved value.
+
+    #[test]
+    fn options_field_interpolates_embedded_ref_in_selected_option() {
+        let state = DialogState::new(&params(&[
+            ("env", "|_dev_||_prod_||_stage_|"),
+            ("role", "|_devops_support_||_myrole-<env>-myaccount_|"),
+        ]));
+        // Index 0 ("devops_support") has no ref — passes through unchanged.
+        assert_eq!(
+            state.values().get("role").map(String::as_str),
+            Some("devops_support")
+        );
+
+        let state = continuing(handle_key(state, KeyCode::Tab, KeyModifiers::NONE));
+        let state = continuing(handle_key(state, KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(
+            state.values().get("role").map(String::as_str),
+            Some("myrole-dev-myaccount")
+        );
+    }
+
+    #[test]
+    fn options_field_with_embedded_ref_tracks_dependency_live() {
+        let state = DialogState::new(&params(&[
+            ("env", "|_dev_||_prod_||_stage_|"),
+            ("role", "|_devops_support_||_myrole-<env>-myaccount_|"),
+        ]));
+        let state = continuing(handle_key(state, KeyCode::Tab, KeyModifiers::NONE));
+        let state = continuing(handle_key(state, KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(
+            state.values().get("role").map(String::as_str),
+            Some("myrole-dev-myaccount")
+        );
+
+        // Cycling `env` further re-interpolates the already-selected `role` option.
+        let state = continuing(handle_key(state, KeyCode::Tab, KeyModifiers::NONE));
+        let state = continuing(handle_key(state, KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(
+            state.values().get("role").map(String::as_str),
+            Some("myrole-prod-myaccount")
+        );
+    }
+
+    #[test]
+    fn typed_char_on_templated_options_field_does_not_freeze_tracking() {
+        let mut state = DialogState::new(&params(&[
+            ("env", "|_dev_||_prod_|"),
+            ("role", "|_devops_support_||_myrole-<env>-myaccount_|"),
+        ]));
+        state.focus = 1; // role: an editing key here should be a no-op, not a materialize.
+        let state = continuing(handle_key(state, KeyCode::Char('x'), KeyModifiers::NONE));
+        let state = continuing(handle_key(state, KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(
+            state.values().get("role").map(String::as_str),
+            Some("myrole-dev-myaccount")
+        );
+
+        // If the typed 'x' had wrongly frozen `role` as `overridden`, it would no
+        // longer track `env` from here on.
+        let mut state = state;
+        state.focus = 0;
+        let state = continuing(handle_key(state, KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(state.values().get("env").map(String::as_str), Some("prod"));
+        assert_eq!(
+            state.values().get("role").map(String::as_str),
+            Some("myrole-prod-myaccount")
+        );
+    }
+
+    #[test]
+    fn cyclic_options_fields_keep_their_options_kind_not_converted_to_text() {
+        let state = DialogState::new(&params(&[("a", "|_x-<b>_||_y_|"), ("b", "|_z-<a>_||_w_|")]));
+        assert!(state.fields.iter().all(|f| f.template.is_none()));
+        assert!(matches!(state.fields[0].kind, FieldKind::Options { .. }));
+        assert!(matches!(state.fields[1].kind, FieldKind::Options { .. }));
+        assert_eq!(state.values().get("a").map(String::as_str), Some("x-<b>"));
+        assert_eq!(state.values().get("b").map(String::as_str), Some("z-<a>"));
     }
 }
